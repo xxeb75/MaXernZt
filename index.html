@@ -49,6 +49,15 @@
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" opacity=".45"/><circle cx="12" cy="12" r="3" opacity=".45"/><path d="M4 4l16 16"/></symbol>
   <symbol id="i-scrap" viewBox="0 0 24 24"><path d="M4 4h9l7 7v9H4z"/><path d="M13 4v7h7" stroke-dasharray="2.2 2.2" opacity=".6"/><path d="M8 13l4 4M12 13l-4 4"/></symbol>
+  <symbol id="i-path" viewBox="0 0 24 24"><circle cx="5.5" cy="18.5" r="2.2" fill="currentColor"/><path d="M7.4 17C9.5 8 14.5 16.5 18.3 7.4" stroke-dasharray="2.6 2.4"/><path d="M14.6 6.6l4-.6.6 4"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7.5 4.8v14.4L19 12z" fill="currentColor"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.2" y="6.2" width="11.6" height="11.6" rx="1.6" fill="currentColor"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.2V12l3.2 2"/></symbol>
+  <symbol id="i-loop" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.7L20 8.5M20 4v4.5h-4.5M20 12a8 8 0 0 1-13.7 5.7L4 15.5M4 20v-4.5h4.5"/></symbol>
+  <symbol id="i-pingpong" viewBox="0 0 24 24"><path d="M3.5 12h17M7 8.5L3.5 12 7 15.5M17 8.5l3.5 3.5-3.5 3.5"/></symbol>
+  <symbol id="i-ease-linear" viewBox="0 0 24 24"><path d="M4 19.5h16M4 19.5V4"/><path d="M6 17.5L18.5 6"/></symbol>
+  <symbol id="i-ease-smooth" viewBox="0 0 24 24"><path d="M4 19.5h16M4 19.5V4"/><path d="M6 17.5C12 17.5 12 6 18.5 6"/></symbol>
+  <symbol id="i-orient" viewBox="0 0 24 24"><path d="M12 3.5L19 20l-7-3.6L5 20z"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
 </svg>
 
@@ -108,6 +117,8 @@
   <button id="btn-scissors" class="tb" data-tip="Ciseaux (X)" data-pos="right"><svg class="ic"><use href="#i-scissors"/></svg></button>
   <button id="btn-tear" class="tb" data-tip="Déchirer (R)" data-pos="right"><svg class="ic"><use href="#i-tear"/></svg></button>
   <hr>
+  <button id="btn-path" class="tb" data-tip="Trajectoire (P)" data-pos="right"><svg class="ic"><use href="#i-path"/></svg></button>
+  <hr>
   <button id="btn-text" class="tb" data-tip="Lettres découpées (T)" data-pos="right"><svg class="ic"><use href="#i-letter"/></svg></button>
   <div id="textpop">
     <div class="tp-row">
@@ -138,6 +149,17 @@
   <header><svg class="ic"><use href="#i-layers"/></svg><output id="lcount">0</output></header>
   <ul id="layer-list"></ul>
 </aside>
+
+<div id="animbar" class="noanim">
+  <button id="btn-play" class="ib play" data-tip="Lecture (Espace)" data-pos="top"><svg class="ic"><use href="#i-play"/></svg></button>
+  <div class="grp">
+    <label class="ctl" data-tip="Durée de la trajectoire" data-pos="top"><svg class="ic"><use href="#i-clock"/></svg><input id="anim-dur" type="range" min="5" max="100" value="30"><output id="v-anim-dur"></output></label>
+    <button id="btn-amode" class="ib" data-tip="Boucle ou aller-retour" data-pos="top"><svg class="ic"><use href="#i-loop"/></svg></button>
+    <button id="btn-aease" class="ib" data-tip="Vitesse constante ou douce" data-pos="top"><svg class="ic"><use href="#i-ease-linear"/></svg></button>
+    <button id="btn-afollow" class="ib" data-tip="Tourner dans le sens du trajet" data-pos="top"><svg class="ic"><use href="#i-orient"/></svg></button>
+    <button id="btn-adel" class="ib danger" data-tip="Supprimer la trajectoire" data-pos="top"><svg class="ic"><use href="#i-trash"/></svg></button>
+  </div>
+</div>
 
 <footer id="foot"><span id="status"></span></footer>
 

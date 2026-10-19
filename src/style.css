@@ -18,8 +18,8 @@ html, body { height: 100%; }
 body {
   margin: 0; display: grid; overflow: hidden; background: var(--chrome); color: var(--text);
   font: 13px/1.3 var(--font); font-variant-numeric: tabular-nums;
-  grid-template-columns: 52px 1fr 216px; grid-template-rows: 44px 42px 1fr 26px;
-  grid-template-areas: "top top top" "opts opts opts" "tools stage layers" "foot foot foot";
+  grid-template-columns: 52px 1fr 216px; grid-template-rows: 44px 42px 1fr 44px 26px;
+  grid-template-areas: "top top top" "opts opts opts" "tools stage layers" "anim anim anim" "foot foot foot";
 }
 
 /* icônes */
@@ -164,3 +164,11 @@ body.drop #stage::after { content: ""; position: absolute; inset: 12px; border: 
 .ly.hid .th, .ly.hid .nm, .ly.hid .fold { opacity: .4; }
 
 .ib.on { background: var(--accent); color: var(--on-accent); }
+
+/* barre d'animation */
+#animbar { grid-area: anim; position: relative; z-index: 6; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--panel); border-top: 1px solid var(--line); }
+#animbar .grp { border: 0; margin: 0; padding: 0; }
+#animbar.noanim .grp { opacity: .3; pointer-events: none; }
+.ib.play { width: 34px; height: 34px; border-radius: 17px; background: var(--raise); }
+.ib.play:hover { background: #3f454e; }
+.ib.play.on { background: var(--accent); color: var(--on-accent); }

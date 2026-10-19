@@ -8,8 +8,10 @@ import { type Group, type Leaf, type Node, type TNode, isGroup, leavesOf, detach
 const PW = 1000, PH = 1400; // taille de la feuille
 type Pt = { x: number; y: number };
 
+/** Trajectoire d'un élément ou d'un groupe : points relatifs au centre, durée en secondes. */
+interface Anim { pts: Pt[]; dur: number; mode: 'loop' | 'pingpong'; ease: 'linear' | 'smooth'; follow: boolean }
 interface Layer extends Leaf {
-  name: string; visible: boolean; base: HTMLCanvasElement; baked: HTMLCanvasElement;
+  anim?: Anim; name: string; visible: boolean; base: HTMLCanvasElement; baked: HTMLCanvasElement;
   border: number; shadow: number; rough: number; letter?: LetterSpec;
   box: Container; sprite: Sprite; shade: Sprite;
 }
@@ -24,8 +26,8 @@ $('stage').appendChild(app.canvas);
 const world = new Container();
 const paper = new Graphics();
 const ui = new Container(); // surcouche (sélection, tracés) en coordonnées écran
-const selG = new Graphics(), pathG = new Graphics();
-ui.addChild(selG, pathG);
+const selG = new Graphics(), pathG = new Graphics(), animG = new Graphics();
+ui.addChild(animG, selG, pathG);
 world.addChild(paper);
 app.stage.addChild(world, ui);
 
@@ -132,14 +134,14 @@ function hit(l: Layer, p: Pt): boolean {
 }
 
 // ---- historique (annuler / rétablir) : instantanés légers, les canvas de base sont immuables
-interface LState { id: number; name: string; visible: boolean; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
+interface LState { id: number; name: string; visible: boolean; anim?: Anim; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
 interface Snap { layers: LState[]; bg: string; tree: TNode[]; sel: number[] }
 const snap = (): Snap => ({
-  layers: layers.map(l => ({ id: l.id, name: l.name, visible: l.visible, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rot: l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y })),
+  layers: layers.map(l => ({ id: l.id, name: l.name, visible: l.visible, anim: l.anim, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: restPose.get(l)?.x ?? l.box.x, y: restPose.get(l)?.y ?? l.box.y, rot: restPose.get(l)?.r ?? l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y })),
   bg: bgColor, tree: serialize(root), sel: [...selection].filter(l => l !== selected).concat(selected ? [selected] : []).map(l => l.id),
 });
 const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.layers.length === b.layers.length && JSON.stringify(a.tree) === JSON.stringify(b.tree) &&
-  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.visible === v.visible && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
+  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.visible === v.visible && u.anim === v.anim && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
 const hist: Snap[] = []; let hi = -1, soon = 0;
 function updHistUI() { ($('btn-undo') as HTMLButtonElement).disabled = hi <= 0; ($('btn-redo') as HTMLButtonElement).disabled = hi >= hist.length - 1; }
 function commit() {
@@ -167,12 +169,12 @@ function restore(s: Snap) {
       l.box.position.set(st.x, st.y); l.box.rotation = st.rot; l.box.scale.set(st.sx, st.sy);
       if (dirty) refresh(l);
     }
-    l.letter = st.letter; l.visible = st.visible !== false;
+    l.letter = st.letter; l.visible = st.visible !== false; l.anim = st.anim;
     ordered.push(l);
   }
   root.children = [];
   const byId2 = new Map(ordered.map(l => [l.id, l]));
-  buildTree(s.tree, root, id => byId2.get(id), (id, name, collapsed, visible) => { groupSeq = Math.max(groupSeq, id + 1); return { id, name, collapsed, visible, children: [], parent: root }; });
+  buildTree(s.tree, root, id => byId2.get(id), (id, name, collapsed, visible, anim) => { groupSeq = Math.max(groupSeq, id + 1); return { id, name, collapsed, visible, anim, children: [], parent: root }; });
   for (const l of ordered) if (!l.parent || !hasAncestorRoot(l)) attach(l, root);
   reflow();
   bgColor = s.bg; drawPaper(); $<HTMLInputElement>('bg').value = bgColor;
@@ -180,8 +182,8 @@ function restore(s: Snap) {
   setSelection(sl, sl[sl.length - 1]);
 }
 function hasAncestorRoot(l: Layer) { let g: Group | null = l.parent; while (g) { if (g === root) return l.parent.children.includes(l); g = g.parent; } return false; }
-function undo() { if (hi > 0) { hi--; restore(hist[hi]); updHistUI(); status('Annulé.'); } }
-function redo() { if (hi < hist.length - 1) { hi++; restore(hist[hi]); updHistUI(); status('Rétabli.'); } }
+function undo() { stopPlay(); if (hi > 0) { hi--; restore(hist[hi]); updHistUI(); status('Annulé.'); } }
+function redo() { stopPlay(); if (hi < hist.length - 1) { hi++; restore(hist[hi]); updHistUI(); status('Rétabli.'); } }
 $('btn-undo').onclick = undo; $('btn-redo').onclick = redo;
 
 // ---- import
@@ -229,16 +231,18 @@ $('btn-flat').onclick = () => {
 };
 
 // ---- ciseaux / déchirure
-type Tool = 'move' | 'scissors' | 'tear' | 'sam';
+type Tool = 'move' | 'scissors' | 'tear' | 'sam' | 'path';
 let tool: Tool = 'move';
 function setTool(t: Tool) {
   tool = tool === t ? 'move' : t;
   if (tool !== 'sam') samClear();
   $('btn-select').classList.toggle('on', tool === 'move');
   $('btn-sam').classList.toggle('on', tool === 'sam');
+  $('btn-path').classList.toggle('on', tool === 'path');
   $('btn-scissors').classList.toggle('on', tool === 'scissors'); $('btn-tear').classList.toggle('on', tool === 'tear');
   app.canvas.style.cursor = tool === 'move' ? 'default' : 'crosshair';
   if (tool === 'sam') { status("Clique sur l'objet à détourer."); return; }
+  if (tool === 'path') { status(selection.size ? "Dessine la trajectoire en partant de l'élément." : "Sélectionne d'abord un élément ou un groupe."); return; }
   if (tool !== 'move') status(selected ? (tool === 'scissors' ? 'Trace le contour à découper.' : 'Trace une ligne à travers l\'image pour la déchirer.') : 'Sélectionne d\'abord une image.');
 }
 $('btn-sam').onclick = async () => {
@@ -246,6 +250,7 @@ $('btn-sam').onclick = async () => {
   setTool('sam');
 };
 $('btn-select').onclick = () => { if (tool !== 'move') setTool(tool); };
+$('btn-path').onclick = () => setTool('path');
 $('btn-scissors').onclick = () => setTool('scissors');
 $('btn-tear').onclick = () => setTool('tear');
 
@@ -344,6 +349,7 @@ $('btn-scrap').onclick = () => { discardScraps = !discardScraps; try { localStor
 syncScrap();
 
 function finishPath(screenPts: Pt[]) {
+  if (tool === 'path') { finishAnimPath(screenPts); return; }
   const l = selected; if (!l || screenPts.length < 3) return;
   const pts = screenPts.map(p => toWorld(p.x, p.y));
   let piece: Layer | null, keepTool = false;
@@ -383,12 +389,12 @@ $('btn-del').onclick = () => { if (!selection.size) { status('Sélectionne un ca
 
 function cloneNode(n: Node, parent: Group, dx: number, dy: number, out: Layer[]): Node {
   if (isGroup(n)) {
-    const g: Group = { id: groupSeq++, name: n.name, collapsed: n.collapsed, visible: n.visible, children: [], parent };
+    const g: Group = { id: groupSeq++, name: n.name, collapsed: n.collapsed, visible: n.visible, anim: n.anim, children: [], parent };
     parent.children.push(g); n.children.forEach(c => cloneNode(c, g, dx, dy, out)); return g;
   }
   const l = n as Layer;
   const nl = addLayer(l.base, l.name, { pos: { x: l.box.x + dx, y: l.box.y + dy }, rot: l.box.rotation, scale: { x: l.box.scale.x, y: l.box.scale.y } }, { border: l.border, shadow: l.shadow, rough: l.rough });
-  nl.letter = l.letter; nl.visible = l.visible; detach(nl); attach(nl, parent); out.push(nl);
+  nl.letter = l.letter; nl.visible = l.visible; nl.anim = l.anim; detach(nl); attach(nl, parent); out.push(nl);
   return nl;
 }
 $('btn-dup').onclick = () => {
@@ -587,16 +593,17 @@ function download(blob: Blob | null, name: string) {
   document.body.appendChild(a); a.click();
   setTimeout(() => { a.remove(); URL.revokeObjectURL(a.href); }, 120000); // un gros fichier ne doit pas perdre son URL en cours de téléchargement
 }
-$('btn-export').onclick = () => extractPaper().toBlob(b => download(b, 'collage.png'));
+$('btn-export').onclick = () => { stopPlay(); extractPaper().toBlob(b => download(b, 'collage.png')); };
 $('btn-export-layers').onclick = async () => {
+  stopPlay();
   const name = (l: Layer, z: number) => `${String(z).padStart(2, '0')}_${l.name.replace(/\W+/g, '_')}.png`;
   const groupPath = (l: Layer) => { const names: string[] = []; for (let g: Group | null = l.parent; g && g !== root; g = g.parent) names.unshift(g.name); return names.join('/'); };
-  const hier = (g: Group): unknown[] => g.children.map(c => (isGroup(c) ? { group: c.name, children: hier(c) } : { layer: name(c as Layer, layers.indexOf(c as Layer)).replace('.png', '') }));
+  const hier = (g: Group): unknown[] => g.children.map(c => (isGroup(c) ? { group: c.name, anim: animJson(c.anim as Anim | undefined), children: hier(c) } : { layer: name(c as Layer, layers.indexOf(c as Layer)).replace('.png', '') }));
   const manifest = {
     canvas: [PW, PH],
     hierarchy: hier(root),
     layers: layers.map((l, z) => ({
-      group: groupPath(l), visible: shown(l),
+      group: groupPath(l), visible: shown(l), anim: animJson(l.anim),
       name: name(l, z).replace('.png', ''), file: 'layers/' + name(l, z), w: l.baked.width, h: l.baked.height,
       x: Math.round(l.box.x), y: Math.round(l.box.y), rotation: +(l.box.rotation * 180 / Math.PI).toFixed(2),
       scale: [+l.box.scale.x.toFixed(3), +l.box.scale.y.toFixed(3)], z,
@@ -613,11 +620,12 @@ $('btn-export-layers').onclick = async () => {
 // ---- projet : sauvegarde / chargement (.maxernzt = JSON, images en PNG base64, partagées si identiques)
 let projectName = 'collage', dirty = false;
 async function saveProject() {
+  stopPlay();
   const ids = new Map<HTMLCanvasElement, string>(), images: Record<string, string> = {};
   const out = layers.map(l => {
     let id = ids.get(l.base);
     if (!id) { id = 'img' + ids.size; ids.set(l.base, id); images[id] = l.base.toDataURL('image/png'); }
-    return { id: l.id, name: l.name, visible: l.visible, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
+    return { id: l.id, name: l.name, visible: l.visible, anim: l.anim, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
   });
   const blob = new Blob([JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, tree: serialize(root), layers: out, images })], { type: 'application/json' });
   const fileName = projectName + '.maxernzt';
@@ -649,6 +657,7 @@ const decode = (url: string) => new Promise<HTMLCanvasElement>((res, rej) => {
   const im = new Image(); im.onload = () => { const c = makeCanvas(im.width, im.height); c.getContext('2d')!.drawImage(im, 0, 0); res(c); }; im.onerror = () => rej(new Error('image illisible')); im.src = url;
 });
 async function loadProject(f: File) {
+  stopPlay();
   try {
     const txt = await f.text();
     if (!txt.trim()) throw new Error('le fichier est vide (enregistrement interrompu)');
@@ -656,7 +665,7 @@ async function loadProject(f: File) {
     if (d.format !== 'maxernzt' || !Array.isArray(d.layers)) throw new Error('fichier non reconnu');
     const imgs = new Map<string, HTMLCanvasElement>();
     for (const [id, url] of Object.entries<string>(d.images)) imgs.set(id, await decode(url));
-    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
+    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, anim: l.anim, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
     restore({ layers: ls, bg: d.bg ?? bgColor, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); commit(); dirty = false;
@@ -667,6 +676,7 @@ $('btn-save').onclick = saveProject;
 $('btn-open').onclick = () => $<HTMLInputElement>('file-proj').click();
 $<HTMLInputElement>('file-proj').onchange = e => { const i = e.target as HTMLInputElement; if (i.files![0]) loadProject(i.files![0]); i.value = ''; };
 $('btn-new').onclick = () => {
+  stopPlay();
   if (layers.length && dirty && !confirm('Vider la feuille ? (tu pourras annuler avec Ctrl+Z)')) return;
   restore({ layers: [], bg: bgColor, tree: [], sel: [] }); projectName = 'collage'; commit(); status('Nouvelle feuille.');
 };
@@ -733,6 +743,7 @@ function finishMarquee(m: NonNullable<typeof marq>) {
 cv.addEventListener('pointerdown', e => {
   const p = pos(e); cv.setPointerCapture(e.pointerId); closeTextPop();
   if (e.button === 1 || e.button === 2) { pan = { sx: p.x, sy: p.y, vx: view.x, vy: view.y }; return; }
+  if (playing) return;
   if (tool === 'sam') {
     const w = toWorld(p.x, p.y);
     for (let i = layers.length - 1; i >= 0; i--) if (hit(layers[i], w)) { const l = layers[i]; select(l); samClick(l, w, e.altKey ? 0 : 1, e.shiftKey || e.altKey); return; }
@@ -802,7 +813,7 @@ const end = () => {
 cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('dblclick', e => {
-  if (tool !== 'move') return;
+  if (tool !== 'move' || playing) return;
   const w = toWorld(pos(e).x, pos(e).y);
   for (let i = layers.length - 1; i >= 0; i--) if (hit(layers[i], w)) { const l = layers[i]; setSelection([l], l); if (l.letter) openLetterEdit(l); return; }
 });
@@ -829,6 +840,8 @@ addEventListener('keydown', e => {
   }
   if (typing) return;
   const key = e.key.toLowerCase(), click = (id: string) => $(id).click();
+  if (e.key === ' ') { e.preventDefault(); click('btn-play'); return; }
+  if (key === 'p') { click('btn-path'); return; }
   if (key === 'v') { click('btn-select'); return; }
   if (key === 'a') { click('btn-ai'); return; }
   if (key === 'c') { click('btn-sam'); return; }
@@ -841,12 +854,14 @@ addEventListener('keydown', e => {
   if (key === '[') { click('btn-down'); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && selection.size) click('btn-del');
   if (e.key === 'Enter') samValidate();
-  if (e.key === 'Escape') { samClear(); path = null; marq = null; pathG.clear(); if (tool !== 'move') setTool(tool); }
+  if (e.key === 'Escape') { stopPlay(); samClear(); path = null; marq = null; pathG.clear(); if (tool !== 'move') setTool(tool); }
 });
 
 // ---- surcouche de sélection
 app.ticker.add(() => {
-  selG.clear();
+  selG.clear(); animG.clear();
+  if (playing) { animT += app.ticker.deltaMS / 1000; applyAnim(); syncPanels(); return; }
+  drawAnimPaths();
   if (selection.size > 1) for (const l of selection) { const q = frameCorners(l).flatMap(c => [c.x, c.y]); selG.poly(q).stroke({ width: 1, color: 0xffffff, alpha: 0.7 }); }
   const h = selHandles();
   if (h) {
@@ -957,10 +972,173 @@ function syncPanels() {
   if (sig !== layersSig) { layersSig = sig; renderLayers(); }
   $('empty').classList.toggle('gone', layers.length > 0);
   $('opts').classList.toggle('nosel', !selection.size);
+  syncAnimBar();
   for (const [id, out] of [['border', 'v-border'], ['rough', 'v-rough'], ['shadow', 'v-shadow'], ['tol', 'v-tol']]) {
     const r = $<HTMLInputElement>(id), v = +r.value, mn = +r.min, mx = +r.max;
     r.style.setProperty('--p', ((v - mn) / (mx - mn)) * 100 + '%'); $(out).textContent = String(v);
   }
+}
+
+// ---- animation : une trajectoire par élément ou par groupe
+const animOf = (n: Node): Anim | undefined => (isGroup(n) ? (n.anim as Anim | undefined) : (n as Layer).anim);
+function setAnim(n: Node, a: Anim | undefined) { if (isGroup(n)) n.anim = a; else (n as Layer).anim = a; }
+const animJson = (a?: Anim) => (a ? { points: a.pts.map(p => [Math.round(p.x), Math.round(p.y)]), duration: a.dur, mode: a.mode, ease: a.ease, follow: a.follow } : null);
+
+const lenCache = new WeakMap<Anim, number[]>();
+function cum(a: Anim): number[] {
+  let c = lenCache.get(a);
+  if (!c) { c = [0]; for (let i = 1; i < a.pts.length; i++) c.push(c[i - 1] + Math.hypot(a.pts[i].x - a.pts[i - 1].x, a.pts[i].y - a.pts[i - 1].y)); lenCache.set(a, c); }
+  return c;
+}
+/** Position (relative) et cap au point d'abscisse curviligne `u` (0-1). */
+function pathAt(a: Anim, u: number) {
+  const c = cum(a), d = Math.min(Math.max(u, 0), 1) * (c[c.length - 1] || 1);
+  let i = 1; while (i < c.length - 1 && c[i] < d) i++;
+  const t = (d - c[i - 1]) / ((c[i] - c[i - 1]) || 1), p0 = a.pts[i - 1], p1 = a.pts[i];
+  return { x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t, ang: Math.atan2(p1.y - p0.y, p1.x - p0.x) };
+}
+function sampleAnim(a: Anim, time: number) {
+  const ph = (time / a.dur) % (a.mode === 'loop' ? 1 : 2), fwd = a.mode === 'loop' || ph < 1;
+  let u = a.mode === 'loop' ? ph : ph < 1 ? ph : 2 - ph;
+  if (a.ease === 'smooth') u = u * u * (3 - 2 * u);
+  const s = pathAt(a, u);
+  return { x: s.x, y: s.y, ang: fwd ? s.ang : s.ang + Math.PI };
+}
+
+// lecture : on part de la pose de repos de chaque calque, on y ajoute les décalages de son chemin et de ceux de ses groupes
+const restPose = new Map<Layer, { x: number; y: number; r: number }>();
+const groupRest = new Map<Group, Pt>();
+let playing = false, animT = 0;
+function groupRestCenter(g: Group): Pt {
+  let c = groupRest.get(g);
+  if (!c) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const l of leavesOf(g) as Layer[]) { const r = restPose.get(l) ?? { x: l.box.x, y: l.box.y }; x0 = Math.min(x0, r.x); x1 = Math.max(x1, r.x); y0 = Math.min(y0, r.y); y1 = Math.max(y1, r.y); }
+    c = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }; groupRest.set(g, c);
+  }
+  return c;
+}
+function applyAnim() {
+  for (const l of layers) {
+    let r0 = restPose.get(l);
+    if (!r0) { r0 = { x: l.box.x, y: l.box.y, r: l.box.rotation }; restPose.set(l, r0); }
+    let x = r0.x, y = r0.y, r = r0.r;
+    const step = (a: Anim | undefined, c: Pt | null) => {
+      if (!a || a.pts.length < 2) return;
+      const s = sampleAnim(a, animT);
+      if (a.follow) {
+        const d = s.ang - pathAt(a, 0).ang;
+        if (c) { const rx = x - c.x, ry = y - c.y, cs = Math.cos(d), sn = Math.sin(d); x = c.x + rx * cs - ry * sn; y = c.y + rx * sn + ry * cs; }
+        r += d;
+      }
+      x += s.x; y += s.y;
+    };
+    step(l.anim, null);
+    for (let g: Group | null = l.parent; g && g !== root; g = g.parent) step(g.anim as Anim | undefined, groupRestCenter(g));
+    l.box.position.set(x, y); l.box.rotation = r;
+  }
+}
+const anyAnim = () => layers.some(l => l.anim) || (() => { let f = false; const w = (g: Group) => { for (const c of g.children) if (isGroup(c)) { if (c.anim) f = true; w(c); } }; w(root); return f; })();
+function startPlay() {
+  restPose.clear(); groupRest.clear();
+  for (const l of layers) restPose.set(l, { x: l.box.x, y: l.box.y, r: l.box.rotation });
+  playing = true; animT = 0; ui.alpha = 0.0;
+  $('btn-play').classList.add('on'); $('btn-play').querySelector('use')!.setAttribute('href', '#i-stop');
+  status('Lecture en cours — Espace ou Échap pour arrêter.');
+}
+function stopPlay() {
+  if (!playing) return;
+  for (const [l, p] of restPose) { l.box.position.set(p.x, p.y); l.box.rotation = p.r; }
+  restPose.clear(); groupRest.clear(); playing = false; ui.alpha = 1;
+  $('btn-play').classList.remove('on'); $('btn-play').querySelector('use')!.setAttribute('href', '#i-play');
+  status('Lecture arrêtée.');
+}
+$('btn-play').onclick = () => { if (playing) stopPlay(); else if (anyAnim()) startPlay(); else status("Aucune trajectoire : choisis l'outil trajectoire (P) et dessine un chemin."); };
+
+/** Rééchantillonne le tracé à pas constant puis l'adoucit (extrémités fixes). */
+function smoothPath(P: Pt[]): Pt[] {
+  const step = 10, out: Pt[] = [P[0]];
+  let acc = 0;
+  for (let i = 1; i < P.length; i++) {
+    let ax = P[i - 1].x, ay = P[i - 1].y, dl = Math.hypot(P[i].x - ax, P[i].y - ay);
+    const ux = (P[i].x - ax) / (dl || 1), uy = (P[i].y - ay) / (dl || 1);
+    while (acc + dl >= step) { const s = step - acc; ax += ux * s; ay += uy * s; dl -= s; acc = 0; out.push({ x: ax, y: ay }); }
+    acc += dl;
+  }
+  out.push(P[P.length - 1]);
+  for (let k = 0; k < 3; k++) { const c = out.map(p => ({ ...p })); for (let i = 1; i < out.length - 1; i++) out[i] = { x: (c[i - 1].x + c[i].x + c[i + 1].x) / 3, y: (c[i - 1].y + c[i].y + c[i + 1].y) / 3 }; }
+  return out;
+}
+function finishAnimPath(screenPts: Pt[]) {
+  const nodes = selectedNodes();
+  if (!nodes.length || screenPts.length < 3) return;
+  const pts = smoothPath(screenPts.map(p => toWorld(p.x, p.y)));
+  if (cum({ pts, dur: 1, mode: 'loop', ease: 'linear', follow: false }).at(-1)! < 20) { status('Trajectoire trop courte.'); return; }
+  const rel = pts.map(p => ({ x: p.x - pts[0].x, y: p.y - pts[0].y }));
+  for (const n of nodes) setAnim(n, { dur: 3, mode: 'loop', ease: 'linear', follow: false, ...animOf(n), pts: rel });
+  commit(); setTool('path');
+  status('Trajectoire créée : ▶ (Espace) pour la lire.');
+}
+
+// affichage des trajectoires (pointillés) : celles de la sélection en plein, les autres en discret
+function nodeCenter(n: Node): Pt {
+  if (!isGroup(n)) { const l = n as Layer; return { x: l.box.x, y: l.box.y }; }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const l of leavesOf(n) as Layer[]) { x0 = Math.min(x0, l.box.x); x1 = Math.max(x1, l.box.x); y0 = Math.min(y0, l.box.y); y1 = Math.max(y1, l.box.y); }
+  return { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+}
+function dashed(g: Graphics, P: Pt[], dash: number, gap: number) {
+  let on = true, left = dash;
+  for (let i = 1; i < P.length; i++) {
+    let ax = P[i - 1].x, ay = P[i - 1].y, dl = Math.hypot(P[i].x - ax, P[i].y - ay);
+    const ux = (P[i].x - ax) / (dl || 1), uy = (P[i].y - ay) / (dl || 1);
+    while (dl > 0) {
+      const s = Math.min(left, dl);
+      if (on) g.moveTo(ax, ay).lineTo(ax + ux * s, ay + uy * s);
+      ax += ux * s; ay += uy * s; dl -= s; left -= s;
+      if (left <= 0) { on = !on; left = on ? dash : gap; }
+    }
+  }
+}
+function drawAnimPaths() {
+  const sel = new Set(selectedNodes());
+  const walk = (g: Group) => {
+    for (const c of g.children) {
+      const a = animOf(c);
+      if (a && a.pts.length > 1 && shown(c)) {
+        const k = nodeCenter(c), P = a.pts.map(p => world.toGlobal({ x: k.x + p.x, y: k.y + p.y })), al = sel.has(c) ? 1 : 0.35;
+        const f = P.flatMap(p => [p.x, p.y]);
+        animG.poly(f, false).stroke({ width: 4.5, color: 0x000000, alpha: 0.45 * al });
+        dashed(animG, P, 8, 6); animG.stroke({ width: 2, color: 0xffffff, alpha: al });
+        animG.circle(P[0].x, P[0].y, 5).fill({ color: 0xf2b134, alpha: al }).stroke({ width: 1.5, color: 0x1d1f23, alpha: al });
+        const e = P[P.length - 1], p = P[Math.max(0, P.length - 4)], ang = Math.atan2(e.y - p.y, e.x - p.x), s = 9;
+        animG.poly([e.x, e.y, e.x - Math.cos(ang - 0.5) * s, e.y - Math.sin(ang - 0.5) * s, e.x - Math.cos(ang + 0.5) * s, e.y - Math.sin(ang + 0.5) * s]).fill({ color: 0xffffff, alpha: al }).stroke({ width: 1.5, color: 0x1d1f23, alpha: al });
+      }
+      if (isGroup(c)) walk(c);
+    }
+  };
+  walk(root);
+}
+
+// barre d'animation : réglages des trajectoires sélectionnées
+const animNodes = () => selectedNodes().filter(n => animOf(n));
+function editAnim(f: (a: Anim) => Anim) { for (const n of animNodes()) setAnim(n, f(animOf(n)!)); commitSoon(); }
+$<HTMLInputElement>('anim-dur').oninput = e => { const v = +(e.target as HTMLInputElement).value / 10; editAnim(a => ({ ...a, dur: v })); };
+$('btn-amode').onclick = () => editAnim(a => ({ ...a, mode: a.mode === 'loop' ? 'pingpong' : 'loop' }));
+$('btn-aease').onclick = () => editAnim(a => ({ ...a, ease: a.ease === 'linear' ? 'smooth' : 'linear' }));
+$('btn-afollow').onclick = () => editAnim(a => ({ ...a, follow: !a.follow }));
+$('btn-adel').onclick = () => { const ns = animNodes(); if (!ns.length) return; ns.forEach(n => setAnim(n, undefined)); commit(); };
+function syncAnimBar() {
+  const an = animNodes()[0], a = an ? animOf(an) : undefined;
+  $('animbar').classList.toggle('noanim', !a);
+  ($('btn-play') as HTMLButtonElement).disabled = !playing && !anyAnim();
+  if (!a) return;
+  const r = $<HTMLInputElement>('anim-dur');
+  if (document.activeElement !== r) r.value = String(Math.round(a.dur * 10));
+  r.style.setProperty('--p', ((+r.value - +r.min) / (+r.max - +r.min)) * 100 + '%'); $('v-anim-dur').textContent = (+r.value / 10).toFixed(1) + ' s';
+  $('btn-amode').querySelector('use')!.setAttribute('href', a.mode === 'loop' ? '#i-loop' : '#i-pingpong');
+  $('btn-aease').querySelector('use')!.setAttribute('href', a.ease === 'linear' ? '#i-ease-linear' : '#i-ease-smooth');
+  $('btn-afollow').classList.toggle('on', a.follow);
 }
 
 // accès console pour les tests
