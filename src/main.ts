@@ -10,7 +10,7 @@ type Pt = { x: number; y: number };
 
 /** Trajectoire d'un élément ou d'un groupe : points relatifs au centre, durée en secondes. */
 /** Image clé : l'élément s'arrête au point `u` (0-1) du trajet pendant `hold` s, tourne de `spin` degrés et, en option, se chiffonne en boule. */
-interface Key { u: number; hold: number; spin: number; ball: boolean }
+interface Key { u: number; hold: number; spin: number; ball?: boolean }  // ball : true = se chiffonne, false = se déchiffonne, absent = garde l'état précédent
 interface Anim { pts: Pt[]; dur: number; mode: 'loop' | 'pingpong'; ease: 'linear' | 'smooth'; follow: boolean; keys?: Key[] }
 interface BallFx { spr: Sprite; sh: Sprite; fold: Sprite; frames: Texture[]; k: number; sz: number }
 interface Layer extends Leaf {
@@ -1003,7 +1003,7 @@ function syncPanels() {
 // ---- animation : une trajectoire par élément ou par groupe
 const animOf = (n: Node): Anim | undefined => (isGroup(n) ? (n.anim as Anim | undefined) : (n as Layer).anim);
 function setAnim(n: Node, a: Anim | undefined) { if (isGroup(n)) n.anim = a; else (n as Layer).anim = a; }
-const animJson = (a?: Anim) => (a ? { points: a.pts.map(p => [Math.round(p.x), Math.round(p.y)]), duration: a.dur, mode: a.mode, ease: a.ease, follow: a.follow, keys: keysOf(a).map(k => ({ progress: +k.u.toFixed(4), hold: k.hold, spin: k.spin, crumple: k.ball })) } : null);
+const animJson = (a?: Anim) => (a ? { points: a.pts.map(p => [Math.round(p.x), Math.round(p.y)]), duration: a.dur, mode: a.mode, ease: a.ease, follow: a.follow, keys: keysOf(a).map(k => ({ progress: +k.u.toFixed(4), hold: k.hold, spin: k.spin, crumple: ballAfter(a, keysOf(a).indexOf(k)) })) } : null);
 
 const lenCache = new WeakMap<Anim, number[]>();
 function cum(a: Anim): number[] {
@@ -1022,6 +1022,8 @@ const smooth = (t: number) => t * t * (3 - 2 * t);
 const keysOf = (a: Anim): Key[] => a.keys ?? [];
 const totalOf = (a: Anim) => a.dur + keysOf(a).reduce((t, k) => t + k.hold, 0);
 /** Début de chaque pause sur la ligne de temps (s). */
+/** La feuille est-elle chiffonnée après l'image clé `i` ? */
+function ballAfter(a: Anim, i: number): boolean { let st = false; keysOf(a).slice(0, i + 1).forEach(k => { if (k.ball !== undefined) st = k.ball; }); return st; }
 function keyStarts(a: Anim): number[] {
   let t = 0, cu = 0;
   return keysOf(a).map(k => { t += (k.u - cu) * a.dur; cu = k.u; const st = t; t += k.hold; return st; });
@@ -1039,8 +1041,9 @@ function evalAnim(a: Anim, time: number) {
   };
   for (const k of ks) {
     seg(k.u);
-    if (!found && T < t + k.hold) { const q = k.hold > 0 ? smooth((T - t) / k.hold) : 1; u = k.u; rot = spin + q * k.spin; ball = b0 + q * ((k.ball ? 1 : 0) - b0); found = true; }
-    t += k.hold; spin += k.spin; b0 = k.ball ? 1 : 0;
+    const tgt = k.ball === undefined ? b0 : k.ball ? 1 : 0;
+    if (!found && T < t + k.hold) { const q = k.hold > 0 ? smooth((T - t) / k.hold) : 1; u = k.u; rot = spin + q * k.spin; ball = b0 + q * (tgt - b0); found = true; }
+    t += k.hold; spin += k.spin; b0 = tgt;
   }
   seg(1);
   if (!found) { u = 1; rot = spin; ball = b0; }
@@ -1400,14 +1403,14 @@ $('btn-key').onclick = () => {
   if (!playing) startPlay(); paused = true; playUI();
   if (activeKey()) { status('Il y a déjà une image clé ici.'); return; }
   const u = evalAnim(a, curT(a)).u, hold = 0.8;
-  const keys = [...keysOf(a), { u, hold, spin: 0, ball: false }].sort((x, y) => x.u - y.u);
+  const keys = [...keysOf(a), { u, hold, spin: 0 }].sort((x, y) => x.u - y.u);
   const na = { ...a, keys }; setAnim(an, na); commit();
   animT = keyStarts(na)[keys.findIndex(k => k.u === u)] + hold;   // tête de lecture à la fin de la pause : on voit le résultat
   status('Image clé ajoutée : règle la pause, la rotation (poignée ronde) ou le chiffonnage.');
 };
 $<HTMLInputElement>('key-hold').oninput = e => { const v = +(e.target as HTMLInputElement).value / 10; editKey(k => ({ ...k, hold: v })); };
 $<HTMLInputElement>('key-spin').oninput = e => { const v = +(e.target as HTMLInputElement).value; editKey(k => ({ ...k, spin: v })); };
-$('btn-kball').onclick = () => editKey(k => ({ ...k, ball: !k.ball }));
+$('btn-kball').onclick = () => { const ak = activeKey(); if (ak) { const next = !ballAfter(ak.a, ak.i); editKey(k => ({ ...k, ball: next })); } };
 $('btn-kdel').onclick = () => { const ak = activeKey(); if (!ak) return; setAnim(ak.node, { ...ak.a, keys: keysOf(ak.a).filter((_, i) => i !== ak.i) }); commit(); };
 
 // les trois valeurs chiffrées sont aussi saisissables au clavier (Entrée valide, Échap annule)
@@ -1461,7 +1464,9 @@ function syncAnimBar() {
     if (document.activeElement !== sp) sp.value = String(k.spin);
     h.style.setProperty('--p', ((+h.value - +h.min) / (+h.max - +h.min)) * 100 + '%'); sp.style.setProperty('--p', ((+sp.value - +sp.min) / (+sp.max - +sp.min)) * 100 + '%');
     setNum('v-key-hold', k.hold.toFixed(1) + ' s'); setNum('v-key-spin', k.spin + '°');
-    $('btn-kball').classList.toggle('on', k.ball);
+    const folded = ballAfter(ak.a, ak.i), kb = $('btn-kball');
+    kb.classList.toggle('on', folded); kb.dataset.tip = folded ? 'Déchiffonner (la feuille se redéplie)' : 'Se chiffonner en boule';
+    kb.querySelector('use')!.setAttribute('href', folded ? '#i-unfold' : '#i-ball');
   }
 }
 
