@@ -9,7 +9,7 @@ type Pt = { x: number; y: number };
 
 interface Layer {
   id: number; name: string; base: HTMLCanvasElement; baked: HTMLCanvasElement;
-  border: number; shadow: number; letter?: LetterSpec;
+  border: number; shadow: number; rough: number; letter?: LetterSpec;
   box: Container; sprite: Sprite; shade: Sprite;
 }
 
@@ -62,7 +62,7 @@ const texOf = (c: HTMLCanvasElement) => Texture.from(c);
 
 function refresh(l: Layer) {
   const old = l.sprite.texture;
-  l.baked = bake(l.base, l.border);
+  l.baked = bake(l.base, l.border, l.rough, l.id * 7919 + 13);
   l.sprite.texture = texOf(l.baked);
   l.shade.texture = l.sprite.texture;
   if (old !== Texture.EMPTY) old.destroy(true);
@@ -73,23 +73,23 @@ function refresh(l: Layer) {
   l.shade.visible = a > 0;
 }
 
-function addLayer(base: HTMLCanvasElement, name: string, at?: { pos: Pt; rot: number; scale: Pt }, opts?: Partial<Pick<Layer, 'border' | 'shadow' | 'id'>>): Layer {
+function addLayer(base: HTMLCanvasElement, name: string, at?: { pos: Pt; rot: number; scale: Pt }, opts?: Partial<Pick<Layer, 'border' | 'shadow' | 'rough' | 'id'>>): Layer {
   const border = opts?.border ?? +$<HTMLInputElement>('border').value, shadow = opts?.shadow ?? +$<HTMLInputElement>('shadow').value;
-  const baked = bake(base, border);
+  const rough = opts?.rough ?? +$<HTMLInputElement>('rough').value, baked = base;
   const box = new Container(), sprite = new Sprite(Texture.EMPTY), shade = new Sprite(Texture.EMPTY);
   shade.tint = 0x000000; shade.filters = [new BlurFilter({ strength: 4 })];
   box.addChild(shade, sprite);
   if (at) { box.position.set(at.pos.x, at.pos.y); box.rotation = at.rot; box.scale.set(at.scale.x, at.scale.y); }
   else box.position.set(PW / 2 + (Math.random() - 0.5) * 80, PH / 2 + (Math.random() - 0.5) * 80);
   world.addChild(box);
-  const l: Layer = { id: opts?.id ?? nextId++, name, base, baked, border, shadow, box, sprite, shade };
+  const l: Layer = { id: opts?.id ?? nextId++, name, base, baked, border, shadow, rough, box, sprite, shade };
   layers.push(l); refresh(l); select(l);
   return l;
 }
 
 function select(l: Layer | null) {
   selected = l;
-  if (l) { $<HTMLInputElement>('border').value = String(l.border); $<HTMLInputElement>('shadow').value = String(l.shadow); }
+  if (l) { $<HTMLInputElement>('border').value = String(l.border); $<HTMLInputElement>('shadow').value = String(l.shadow); $<HTMLInputElement>('rough').value = String(l.rough); }
 }
 const toTop = (l: Layer) => { world.addChild(l.box); layers.splice(layers.indexOf(l), 1); layers.push(l); };
 function removeLayer(l: Layer) {
@@ -109,14 +109,14 @@ function hit(l: Layer, p: Pt): boolean {
 }
 
 // ---- historique (annuler / rétablir) : instantanés légers, les canvas de base sont immuables
-interface LState { id: number; name: string; base: HTMLCanvasElement; border: number; shadow: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
+interface LState { id: number; name: string; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
 interface Snap { layers: LState[]; bg: string; sel: number | null }
 const snap = (): Snap => ({
-  layers: layers.map(l => ({ id: l.id, name: l.name, base: l.base, border: l.border, shadow: l.shadow, letter: l.letter, x: l.box.x, y: l.box.y, rot: l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y })),
+  layers: layers.map(l => ({ id: l.id, name: l.name, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rot: l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y })),
   bg: bgColor, sel: selected?.id ?? null,
 });
 const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.layers.length === b.layers.length &&
-  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
+  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
 const hist: Snap[] = []; let hi = -1, soon = 0;
 function updHistUI() { ($('btn-undo') as HTMLButtonElement).disabled = hi <= 0; ($('btn-redo') as HTMLButtonElement).disabled = hi >= hist.length - 1; }
 function commit() {
@@ -136,11 +136,11 @@ function restore(s: Snap) {
   const ordered: Layer[] = [];
   for (const st of s.layers) {
     let l = byId.get(st.id);
-    if (!l) l = addLayer(st.base, st.name, { pos: { x: st.x, y: st.y }, rot: st.rot, scale: { x: st.sx, y: st.sy } }, { border: st.border, shadow: st.shadow, id: st.id });
+    if (!l) l = addLayer(st.base, st.name, { pos: { x: st.x, y: st.y }, rot: st.rot, scale: { x: st.sx, y: st.sy } }, { border: st.border, shadow: st.shadow, rough: st.rough, id: st.id });
     else {
-      const dirty = l.base !== st.base || l.border !== st.border || l.shadow !== st.shadow;
+      const dirty = l.base !== st.base || l.border !== st.border || l.shadow !== st.shadow || l.rough !== st.rough;
       if (l.base !== st.base) forget(l.base);
-      l.base = st.base; l.border = st.border; l.shadow = st.shadow; l.name = st.name;
+      l.base = st.base; l.border = st.border; l.shadow = st.shadow; l.rough = st.rough; l.name = st.name;
       l.box.position.set(st.x, st.y); l.box.rotation = st.rot; l.box.scale.set(st.sx, st.sy);
       if (dirty) refresh(l);
     }
@@ -228,7 +228,7 @@ function cutMask(l: Layer, fillMask: (c: CanvasRenderingContext2D) => void): Lay
   const piece = makeCanvas(w, h), pc = piece.getContext('2d')!;
   pc.drawImage(l.base, 0, 0); pc.globalCompositeOperation = 'destination-in'; pc.drawImage(mask, 0, 0);
   const t = trim(piece); if (!t) return null;
-  const nl = addLayer(t.canvas, l.name + '-morceau', { pos: { x: 0, y: 0 }, rot: l.box.rotation, scale: { x: l.box.scale.x, y: l.box.scale.y } }, { border: l.border, shadow: l.shadow });
+  const nl = addLayer(t.canvas, l.name + '-morceau', { pos: { x: 0, y: 0 }, rot: l.box.rotation, scale: { x: l.box.scale.x, y: l.box.scale.y } }, { border: l.border, shadow: l.shadow, rough: l.rough });
   const pos = layerToWorld(l, { x: nl.baked.width / 2 + t.x, y: nl.baked.height / 2 + t.y });
   nl.box.position.set(pos.x, pos.y);
   const hole = makeCanvas(w, h), hc = hole.getContext('2d')!;
@@ -307,7 +307,7 @@ const need = () => selected ?? (status('Sélectionne un calque.'), null);
 $('btn-del').onclick = () => { const l = need(); if (l) { removeLayer(l); commit(); } };
 $('btn-dup').onclick = () => {
   const l = need(); if (!l) return;
-  const n = addLayer(l.base, l.name + '-copie', { pos: { x: l.box.x + 30, y: l.box.y + 30 }, rot: l.box.rotation, scale: { x: l.box.scale.x, y: l.box.scale.y } }, { border: l.border, shadow: l.shadow });
+  const n = addLayer(l.base, l.name + '-copie', { pos: { x: l.box.x + 30, y: l.box.y + 30 }, rot: l.box.rotation, scale: { x: l.box.scale.x, y: l.box.scale.y } }, { border: l.border, shadow: l.shadow, rough: l.rough });
   n.letter = l.letter; toTop(n); commit();
 };
 $('btn-flip').onclick = () => { const l = need(); if (l) { l.box.scale.x *= -1; commit(); } };
@@ -321,6 +321,7 @@ function move(l: Layer, d: number) {
 $('btn-up').onclick = () => { const l = need(); if (l) move(l, 1); };
 $('btn-down').onclick = () => { const l = need(); if (l) move(l, -1); };
 $<HTMLInputElement>('border').oninput = e => { if (selected) { selected.border = +(e.target as HTMLInputElement).value; refresh(selected); commitSoon(); } };
+$<HTMLInputElement>('rough').oninput = e => { if (selected) { selected.rough = +(e.target as HTMLInputElement).value; refresh(selected); commitSoon(); } };
 $<HTMLInputElement>('shadow').oninput = e => { if (selected) { selected.shadow = +(e.target as HTMLInputElement).value; refresh(selected); commitSoon(); } };
 $<HTMLInputElement>('bg').oninput = e => { bgColor = (e.target as HTMLInputElement).value; drawPaper(); commitSoon(); };
 
@@ -480,7 +481,7 @@ async function saveProject() {
   const out = layers.map(l => {
     let id = ids.get(l.base);
     if (!id) { id = 'img' + ids.size; ids.set(l.base, id); images[id] = l.base.toDataURL('image/png'); }
-    return { id: l.id, name: l.name, image: id, border: l.border, shadow: l.shadow, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
+    return { id: l.id, name: l.name, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
   });
   const blob = new Blob([JSON.stringify({ format: 'maxernzt', version: 1, paper: [PW, PH], bg: bgColor, layers: out, images })], { type: 'application/json' });
   try {
@@ -502,7 +503,7 @@ async function loadProject(f: File) {
     if (d.format !== 'maxernzt' || !Array.isArray(d.layers)) throw new Error('fichier non reconnu');
     const imgs = new Map<string, HTMLCanvasElement>();
     for (const [id, url] of Object.entries<string>(d.images)) imgs.set(id, await decode(url));
-    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
+    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
     restore({ layers: ls, bg: d.bg ?? bgColor, sel: null });
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); commit(); dirty = false;
@@ -522,7 +523,7 @@ addEventListener('beforeunload', e => { if (dirty && layers.length) e.preventDef
 // poignées : coins = taille (proportionnelle), rond au-dessus = rotation (Maj = pas de 15°)
 type HandleKind = 'nw' | 'ne' | 'se' | 'sw' | 'rot';
 interface Xf { kind: HandleKind; l: Layer; cx: number; cy: number; d0: number; sx: number; sy: number; a0: number; r0: number }
-const frameOf = (l: Layer) => ({ x0: PAD - l.border, y0: PAD - l.border, x1: PAD + l.base.width + l.border, y1: PAD + l.base.height + l.border });
+const frameOf = (l: Layer) => { const b = l.border * 1.3; return { x0: PAD - b, y0: PAD - b, x1: PAD + l.base.width + b, y1: PAD + l.base.height + b }; };
 function handlePts(l: Layer): Record<HandleKind, Pt> {
   const f = frameOf(l), g = (x: number, y: number) => l.box.toGlobal({ x, y }), mx = (f.x0 + f.x1) / 2;
   const top = g(mx, f.y0), c = g(mx, (f.y0 + f.y1) / 2), dx = top.x - c.x, dy = top.y - c.y, d = Math.hypot(dx, dy) || 1;
@@ -678,7 +679,7 @@ function syncPanels() {
   if (sig !== layersSig) { layersSig = sig; renderLayers(); }
   $('empty').classList.toggle('gone', layers.length > 0);
   $('opts').classList.toggle('nosel', !selected);
-  for (const [id, out] of [['border', 'v-border'], ['shadow', 'v-shadow'], ['tol', 'v-tol']]) {
+  for (const [id, out] of [['border', 'v-border'], ['rough', 'v-rough'], ['shadow', 'v-shadow'], ['tol', 'v-tol']]) {
     const r = $<HTMLInputElement>(id), v = +r.value, mn = +r.min, mx = +r.max;
     r.style.setProperty('--p', ((v - mn) / (mx - mn)) * 100 + '%'); $(out).textContent = String(v);
   }

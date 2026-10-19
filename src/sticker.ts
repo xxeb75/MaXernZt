@@ -1,5 +1,5 @@
 // Fabrication de la « texture papier découpé » : contour blanc autour d'un calque RGBA.
-export const PAD = 28; // marge réservée autour de l'image pour le contour
+export const PAD = 48; // marge réservée autour de l'image pour le contour
 
 export function makeCanvas(w: number, h: number): HTMLCanvasElement {
   const c = document.createElement('canvas');
@@ -8,23 +8,54 @@ export function makeCanvas(w: number, h: number): HTMLCanvasElement {
   return c;
 }
 
-export function bake(base: HTMLCanvasElement, border: number): HTMLCanvasElement {
-  const out = makeCanvas(base.width + PAD * 2, base.height + PAD * 2);
+// bruit de valeur déterministe (même graine = même contour)
+const hash = (x: number, y: number, s: number) => {
+  let n = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(s, 2147483647)) | 0;
+  n = Math.imul(n ^ (n >>> 13), 1274126177); n ^= n >>> 16;
+  return (n >>> 0) / 4294967296;
+};
+const vnoise = (x: number, y: number, s: number) => {
+  const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  const a = hash(xi, yi, s), b = hash(xi + 1, yi, s), c = hash(xi, yi + 1, s), d = hash(xi + 1, yi + 1, s);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+};
+
+/**
+ * Texture finale d'un calque : l'image + un contour de papier blanc.
+ * Le contour est un champ flou de la silhouette coupé à un seuil qui varie avec du bruit :
+ * épaisseur inégale, bord déchiqueté, fibres. `rough` (0-100) règle l'irrégularité, `seed` la forme.
+ */
+export function bake(base: HTMLCanvasElement, border: number, rough = 60, seed = 1): HTMLCanvasElement {
+  const W = base.width + PAD * 2, H = base.height + PAD * 2;
+  const out = makeCanvas(W, H);
   const ctx = out.getContext('2d')!;
   if (border > 0) {
-    const white = makeCanvas(base.width, base.height);
-    const wc = white.getContext('2d')!;
-    wc.drawImage(base, 0, 0);
-    wc.globalCompositeOperation = 'source-in';
-    wc.fillStyle = '#fffdf5';
-    wc.fillRect(0, 0, white.width, white.height);
-    const N = 32;
-    for (const k of [1, 0.66, 0.33]) {
-      for (let i = 0; i < N; i++) {
-        const a = (i / N) * Math.PI * 2;
-        ctx.drawImage(white, PAD + Math.cos(a) * border * k, PAD + Math.sin(a) * border * k);
+    const sil = makeCanvas(W, H);
+    sil.getContext('2d')!.drawImage(base, PAD, PAD);
+    const blur = makeCanvas(W, H), bc = blur.getContext('2d', { willReadFrequently: true })!;
+    bc.filter = `blur(${(border * 0.8).toFixed(2)}px)`;
+    bc.drawImage(sil, 0, 0);
+    const field = bc.getImageData(0, 0, W, H);
+    const d = field.data, amp = rough / 100;
+    const c1 = Math.max(4, border * 1.8), c2 = Math.max(2.5, border * 0.7);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4, a = d[i + 3] / 255;
+        let alpha = 0, shade = 1;
+        if (a >= 0.97) alpha = 1;
+        else if (a > 0.012) {
+          const coarse = 0.65 * vnoise(x / c1, y / c1, seed) + 0.35 * vnoise(x / c2, y / c2, seed + 7);
+          const fine = hash(x, y, seed + 13);
+          let thr = 0.09 + amp * (coarse - 0.5) * 0.36 + amp * (fine - 0.5) * 0.1;
+          thr = thr < 0.02 ? 0.02 : thr > 0.45 ? 0.45 : thr;
+          alpha = (a - thr) * 14; alpha = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
+          shade = 1 - 0.06 * hash(x, y, seed + 29) * (0.4 + amp);
+        }
+        d[i] = 255 * shade; d[i + 1] = 253 * shade; d[i + 2] = 245 * shade; d[i + 3] = alpha * 255;
       }
     }
+    bc.filter = 'none'; bc.putImageData(field, 0, 0);
+    ctx.drawImage(blur, 0, 0);
   }
   ctx.drawImage(base, PAD, PAD);
   return out;
