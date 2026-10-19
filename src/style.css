@@ -188,3 +188,8 @@ body.drop #stage::after { content: ""; position: absolute; inset: 12px; border: 
 .key-only { display: flex; align-items: center; gap: 2px; }
 .ib.keyadd { color: var(--accent); }
 .ib.keyadd:hover { background: var(--raise); }
+
+/* valeurs chiffrées éditables */
+input.num { width: 7ch; height: 24px; padding: 0 4px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--dim); font: inherit; font-size: 12px; text-align: right; }
+input.num:hover { border-color: var(--line); color: var(--text); }
+input.num:focus { outline: none; border-color: var(--accent); background: #0f1113; color: var(--text); }

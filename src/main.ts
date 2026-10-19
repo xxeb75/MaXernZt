@@ -1371,7 +1371,15 @@ function activeKey() {
 }
 function editKey(f: (k: Key) => Key) {
   const ak = activeKey(); if (!ak) return;
-  setAnim(ak.node, { ...ak.a, keys: keysOf(ak.a).map((k, i) => (i === ak.i ? f(k) : k)) }); commitSoon();
+  const old = keysOf(ak.a)[ak.i], nk = f(old), st = keyStarts(ak.a)[ak.i], off = curT(ak.a) - st;
+  setAnim(ak.node, { ...ak.a, keys: keysOf(ak.a).map((k, i) => (i === ak.i ? nk : k)) }); commitSoon();
+  if (nk.hold !== old.hold) animT = st + off * (nk.hold / old.hold);   // la tête de lecture reste au même endroit de la pause
+}
+/** Change la durée du trajet en gardant la tête de lecture sur la même image clé. */
+function editDuration(v: number) {
+  const ak = activeKey(), off = ak ? curT(ak.a) - keyStarts(ak.a)[ak.i] : 0;
+  editAnim(a => ({ ...a, dur: v }));
+  if (ak) animT = keyStarts(animOf(ak.node)!)[ak.i] + off;
 }
 function playheadTo(t: number) { if (!playing) startPlay(); paused = true; playUI(); animT = t; }
 let kr: { node: Node; idx: number; spin0: number; cx: number; cy: number; last: number; acc: number } | null = null;
@@ -1380,7 +1388,7 @@ function startKeyRot(p: Pt) {
   const c = selCenterWorld(), w = toWorld(p.x, p.y), a0 = Math.atan2(w.y - c.y, w.x - c.x);
   kr = { node: ak.node, idx: ak.i, spin0: keysOf(ak.a)[ak.i].spin, cx: c.x, cy: c.y, last: a0, acc: 0 };
 }
-$<HTMLInputElement>('anim-dur').oninput = e => { const v = +(e.target as HTMLInputElement).value / 10; editAnim(a => ({ ...a, dur: v })); };
+$<HTMLInputElement>('anim-dur').oninput = e => editDuration(+(e.target as HTMLInputElement).value / 10);
 $('btn-amode').onclick = () => editAnim(a => ({ ...a, mode: a.mode === 'loop' ? 'pingpong' : 'loop' }));
 $('btn-aease').onclick = () => editAnim(a => ({ ...a, ease: a.ease === 'linear' ? 'smooth' : 'linear' }));
 $('btn-afollow').onclick = () => editAnim(a => ({ ...a, follow: !a.follow }));
@@ -1401,6 +1409,22 @@ $<HTMLInputElement>('key-hold').oninput = e => { const v = +(e.target as HTMLInp
 $<HTMLInputElement>('key-spin').oninput = e => { const v = +(e.target as HTMLInputElement).value; editKey(k => ({ ...k, spin: v })); };
 $('btn-kball').onclick = () => editKey(k => ({ ...k, ball: !k.ball }));
 $('btn-kdel').onclick = () => { const ak = activeKey(); if (!ak) return; setAnim(ak.node, { ...ak.a, keys: keysOf(ak.a).filter((_, i) => i !== ak.i) }); commit(); };
+
+// les trois valeurs chiffrées sont aussi saisissables au clavier (Entrée valide, Échap annule)
+function setNum(id: string, text: string) { const el = $<HTMLInputElement>(id); if (document.activeElement !== el && el.value !== text) el.value = text; }
+function bindNum(id: string, apply: (v: number) => void) {
+  const el = $<HTMLInputElement>(id);
+  el.onfocus = () => el.select();
+  el.onkeydown = e => { if (e.key === 'Enter') el.blur(); else if (e.key === 'Escape') { el.dataset.cancel = '1'; el.blur(); } };
+  el.onchange = () => {
+    if (el.dataset.cancel) { delete el.dataset.cancel; return; }
+    const v = parseFloat(el.value.replace(',', '.'));
+    if (Number.isFinite(v)) apply(v);
+  };
+}
+bindNum('v-anim-dur', v => editDuration(Math.min(600, Math.max(0.2, v))));
+bindNum('v-key-hold', v => editKey(k => ({ ...k, hold: Math.min(60, Math.max(0.1, v)) })));
+bindNum('v-key-spin', v => editKey(k => ({ ...k, spin: Math.max(-7200, Math.min(7200, Math.round(v))) })));
 
 let marksSig = '';
 function syncAnimBar() {
@@ -1426,7 +1450,7 @@ function syncAnimBar() {
   if (a) {
     const r = $<HTMLInputElement>('anim-dur');
     if (document.activeElement !== r) r.value = String(Math.round(a.dur * 10));
-    r.style.setProperty('--p', ((+r.value - +r.min) / (+r.max - +r.min)) * 100 + '%'); $('v-anim-dur').textContent = (+r.value / 10).toFixed(1) + ' s';
+    r.style.setProperty('--p', ((+r.value - +r.min) / (+r.max - +r.min)) * 100 + '%'); setNum('v-anim-dur', a.dur.toFixed(1) + ' s');
     $('btn-amode').querySelector('use')!.setAttribute('href', a.mode === 'loop' ? '#i-loop' : '#i-pingpong');
     $('btn-aease').querySelector('use')!.setAttribute('href', a.ease === 'linear' ? '#i-ease-linear' : '#i-ease-smooth');
     $('btn-afollow').classList.toggle('on', a.follow);
@@ -1436,7 +1460,7 @@ function syncAnimBar() {
     if (document.activeElement !== h) h.value = String(Math.round(k.hold * 10));
     if (document.activeElement !== sp) sp.value = String(k.spin);
     h.style.setProperty('--p', ((+h.value - +h.min) / (+h.max - +h.min)) * 100 + '%'); sp.style.setProperty('--p', ((+sp.value - +sp.min) / (+sp.max - +sp.min)) * 100 + '%');
-    $('v-key-hold').textContent = k.hold.toFixed(1) + ' s'; $('v-key-spin').textContent = k.spin + '°';
+    setNum('v-key-hold', k.hold.toFixed(1) + ' s'); setNum('v-key-spin', k.spin + '°');
     $('btn-kball').classList.toggle('on', k.ball);
   }
 }
