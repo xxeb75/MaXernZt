@@ -113,7 +113,7 @@ function commit() {
   if (hi >= 0 && sameSnap(hist[hi], s)) return;
   hist.length = hi + 1; hist.push(s);
   if (hist.length > 60) hist.shift();
-  hi = hist.length - 1; updHistUI();
+  hi = hist.length - 1; dirty = true; updHistUI();
 }
 const commitSoon = () => { clearTimeout(soon); soon = window.setTimeout(commit, 400); };
 function restore(s: Snap) {
@@ -155,7 +155,7 @@ async function importFile(f: File) {
   commit();
   status(`Importé : ${f.name} (${c.width}×${c.height}). Clique « Détourer ».`);
 }
-const importAll = async (fl: FileList | File[]) => { for (const f of Array.from(fl)) if (f.type.startsWith('image/')) await importFile(f); };
+const importAll = async (fl: FileList | File[]) => { for (const f of Array.from(fl)) { if (/\.maxernzt$/i.test(f.name)) await loadProject(f); else if (f.type.startsWith('image/')) await importFile(f); } };
 $('btn-import').onclick = () => $<HTMLInputElement>('file').click();
 $<HTMLInputElement>('file').onchange = e => { const i = e.target as HTMLInputElement; importAll(i.files!); i.value = ''; };
 addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('drop'); });
@@ -358,6 +358,51 @@ $('btn-export-layers').onclick = async () => {
   status('Calques exportés (PNG + manifest.json) dans Téléchargements ; range les PNG dans un dossier « layers ».');
 };
 
+// ---- projet : sauvegarde / chargement (.maxernzt = JSON, images en PNG base64, partagées si identiques)
+let projectName = 'collage', dirty = false;
+async function saveProject() {
+  const ids = new Map<HTMLCanvasElement, string>(), images: Record<string, string> = {};
+  const out = layers.map(l => {
+    let id = ids.get(l.base);
+    if (!id) { id = 'img' + ids.size; ids.set(l.base, id); images[id] = l.base.toDataURL('image/png'); }
+    return { id: l.id, name: l.name, image: id, border: l.border, shadow: l.shadow, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
+  });
+  const blob = new Blob([JSON.stringify({ format: 'maxernzt', version: 1, paper: [PW, PH], bg: bgColor, layers: out, images })], { type: 'application/json' });
+  try {
+    const w = window as any;
+    if (w.showSaveFilePicker) {
+      const h = await w.showSaveFilePicker({ suggestedName: projectName + '.maxernzt', types: [{ description: 'Projet MaXernZt', accept: { 'application/json': ['.maxernzt'] } }] });
+      const ws = await h.createWritable(); await ws.write(blob); await ws.close();
+      projectName = String(h.name).replace(/\.maxernzt$/i, '');
+    } else download(blob, projectName + '.maxernzt');
+    dirty = false; status(`Projet enregistré (${layers.length} calques).`);
+  } catch (e) { if ((e as Error).name !== 'AbortError') status("Erreur d'enregistrement : " + (e as Error).message); }
+}
+const decode = (url: string) => new Promise<HTMLCanvasElement>((res, rej) => {
+  const im = new Image(); im.onload = () => { const c = makeCanvas(im.width, im.height); c.getContext('2d')!.drawImage(im, 0, 0); res(c); }; im.onerror = () => rej(new Error('image illisible')); im.src = url;
+});
+async function loadProject(f: File) {
+  try {
+    const d = JSON.parse(await f.text());
+    if (d.format !== 'maxernzt' || !Array.isArray(d.layers)) throw new Error('fichier non reconnu');
+    const imgs = new Map<string, HTMLCanvasElement>();
+    for (const [id, url] of Object.entries<string>(d.images)) imgs.set(id, await decode(url));
+    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
+    nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
+    restore({ layers: ls, bg: d.bg ?? bgColor, sel: null });
+    projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); commit(); dirty = false;
+    status(`Projet « ${projectName} » ouvert (${ls.length} calques).`);
+  } catch (e) { status('Ouverture impossible : ' + (e as Error).message); }
+}
+$('btn-save').onclick = saveProject;
+$('btn-open').onclick = () => $<HTMLInputElement>('file-proj').click();
+$<HTMLInputElement>('file-proj').onchange = e => { const i = e.target as HTMLInputElement; if (i.files![0]) loadProject(i.files![0]); i.value = ''; };
+$('btn-new').onclick = () => {
+  if (layers.length && dirty && !confirm('Vider la feuille ? (tu pourras annuler avec Ctrl+Z)')) return;
+  restore({ layers: [], bg: bgColor, sel: null }); projectName = 'collage'; commit(); status('Nouvelle feuille.');
+};
+addEventListener('beforeunload', e => { if (dirty && layers.length) e.preventDefault(); });
+
 // ---- souris
 let drag: { l: Layer; dx: number; dy: number } | null = null, pan: { sx: number; sy: number; vx: number; vy: number } | null = null, path: Pt[] | null = null;
 const cv = app.canvas;
@@ -398,6 +443,8 @@ addEventListener('keydown', e => {
   const t = e.target as HTMLInputElement;
   if (e.ctrlKey || e.metaKey) {
     const k = e.key.toLowerCase();
+    if (k === 's') { e.preventDefault(); saveProject(); return; }
+    if (k === 'o') { e.preventDefault(); $<HTMLInputElement>('file-proj').click(); return; }
     if (t.tagName === 'INPUT' && t.type === 'text') return;
     if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); } else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
     return;
@@ -418,6 +465,6 @@ app.ticker.add(() => {
 });
 
 // accès console pour les tests
-(window as any).__app = { addLayer, layers, replaceBase, cutoutFlat, get selected() { return selected; } };
+(window as any).__app = { loadProject, saveProject, addLayer, layers, replaceBase, cutoutFlat, get selected() { return selected; } };
 commit();
 status('Glisse des images ici, ou colle-les (Ctrl+V).');

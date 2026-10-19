@@ -10,6 +10,11 @@
 <aside id="tools">
   <h1>MaXernZt</h1>
   <section>
+    <h2>Projet</h2>
+    <div class="grid"><button id="btn-save" title="Ctrl+S">💾 Enregistrer</button><button id="btn-open" title="Ctrl+O">📂 Ouvrir…</button></div>
+    <button id="btn-new">Nouveau</button>
+  </section>
+  <section>
     <div class="grid"><button id="btn-undo" title="Ctrl+Z">↶ Annuler</button><button id="btn-redo" title="Ctrl+Y">↷ Rétablir</button></div>
   </section>
   <section>
@@ -52,6 +57,7 @@
   <p class="help">Clic : sélectionner/déplacer · Alt+molette : taille · Maj+molette : rotation · Ctrl+molette ou clic milieu : zoom/déplacement de la vue · Ctrl+Z / Ctrl+Y : annuler / rétablir · Suppr : effacer</p>
 </aside>
 <main id="stage"></main>
+<input id="file-proj" type="file" accept=".maxernzt,application/json" hidden>
 <input id="file" type="file" accept="image/*" multiple hidden>
 <script type="module" src="/src/main.ts"></script>
 </body>
