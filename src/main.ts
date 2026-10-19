@@ -61,7 +61,7 @@ function refresh(l: Layer) {
   l.shade.visible = a > 0;
 }
 
-function addLayer(base: HTMLCanvasElement, name: string, at?: { pos: Pt; rot: number; scale: Pt }, opts?: Partial<Pick<Layer, 'border' | 'shadow'>>): Layer {
+function addLayer(base: HTMLCanvasElement, name: string, at?: { pos: Pt; rot: number; scale: Pt }, opts?: Partial<Pick<Layer, 'border' | 'shadow' | 'id'>>): Layer {
   const border = opts?.border ?? +$<HTMLInputElement>('border').value, shadow = opts?.shadow ?? +$<HTMLInputElement>('shadow').value;
   const baked = bake(base, border);
   const box = new Container(), sprite = new Sprite(Texture.EMPTY), shade = new Sprite(Texture.EMPTY);
@@ -70,7 +70,7 @@ function addLayer(base: HTMLCanvasElement, name: string, at?: { pos: Pt; rot: nu
   if (at) { box.position.set(at.pos.x, at.pos.y); box.rotation = at.rot; box.scale.set(at.scale.x, at.scale.y); }
   else box.position.set(PW / 2 + (Math.random() - 0.5) * 80, PH / 2 + (Math.random() - 0.5) * 80);
   world.addChild(box);
-  const l: Layer = { id: nextId++, name, base, baked, border, shadow, box, sprite, shade };
+  const l: Layer = { id: opts?.id ?? nextId++, name, base, baked, border, shadow, box, sprite, shade };
   layers.push(l); refresh(l); select(l);
   return l;
 }
@@ -96,6 +96,53 @@ function hit(l: Layer, p: Pt): boolean {
   return l.baked.getContext('2d')!.getImageData(x, y, 1, 1).data[3] > 20;
 }
 
+// ---- historique (annuler / rétablir) : instantanés légers, les canvas de base sont immuables
+interface LState { id: number; name: string; base: HTMLCanvasElement; border: number; shadow: number; x: number; y: number; rot: number; sx: number; sy: number }
+interface Snap { layers: LState[]; bg: string; sel: number | null }
+const snap = (): Snap => ({
+  layers: layers.map(l => ({ id: l.id, name: l.name, base: l.base, border: l.border, shadow: l.shadow, x: l.box.x, y: l.box.y, rot: l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y })),
+  bg: bgColor, sel: selected?.id ?? null,
+});
+const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.layers.length === b.layers.length &&
+  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
+const hist: Snap[] = []; let hi = -1, soon = 0;
+function updHistUI() { ($('btn-undo') as HTMLButtonElement).disabled = hi <= 0; ($('btn-redo') as HTMLButtonElement).disabled = hi >= hist.length - 1; }
+function commit() {
+  clearTimeout(soon);
+  const s = snap();
+  if (hi >= 0 && sameSnap(hist[hi], s)) return;
+  hist.length = hi + 1; hist.push(s);
+  if (hist.length > 60) hist.shift();
+  hi = hist.length - 1; updHistUI();
+}
+const commitSoon = () => { clearTimeout(soon); soon = window.setTimeout(commit, 400); };
+function restore(s: Snap) {
+  samClear();
+  const want = new Set(s.layers.map(x => x.id));
+  for (const l of [...layers]) if (!want.has(l.id)) removeLayer(l);
+  const byId = new Map(layers.map(l => [l.id, l]));
+  const ordered: Layer[] = [];
+  for (const st of s.layers) {
+    let l = byId.get(st.id);
+    if (!l) l = addLayer(st.base, st.name, { pos: { x: st.x, y: st.y }, rot: st.rot, scale: { x: st.sx, y: st.sy } }, { border: st.border, shadow: st.shadow, id: st.id });
+    else {
+      const dirty = l.base !== st.base || l.border !== st.border || l.shadow !== st.shadow;
+      if (l.base !== st.base) forget(l.base);
+      l.base = st.base; l.border = st.border; l.shadow = st.shadow; l.name = st.name;
+      l.box.position.set(st.x, st.y); l.box.rotation = st.rot; l.box.scale.set(st.sx, st.sy);
+      if (dirty) refresh(l);
+    }
+    ordered.push(l);
+  }
+  layers.length = 0; layers.push(...ordered);
+  ordered.forEach((l, i) => world.setChildIndex(l.box, i + 1));
+  bgColor = s.bg; drawPaper(); $<HTMLInputElement>('bg').value = bgColor;
+  select(layers.find(l => l.id === s.sel) ?? null);
+}
+function undo() { if (hi > 0) { hi--; restore(hist[hi]); updHistUI(); status('Annulé.'); } }
+function redo() { if (hi < hist.length - 1) { hi++; restore(hist[hi]); updHistUI(); status('Rétabli.'); } }
+$('btn-undo').onclick = undo; $('btn-redo').onclick = redo;
+
 // ---- import
 const MAX_SIDE = 1200;
 async function importFile(f: File) {
@@ -105,6 +152,7 @@ async function importFile(f: File) {
   c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height);
   const l = addLayer(c, f.name);
   l.box.scale.set(Math.min(1, 520 / Math.max(c.width, c.height)));
+  commit();
   status(`Importé : ${f.name} (${c.width}×${c.height}). Clique « Détourer ».`);
 }
 const importAll = async (fl: FileList | File[]) => { for (const f of Array.from(fl)) if (f.type.startsWith('image/')) await importFile(f); };
@@ -124,7 +172,7 @@ function setBase(l: Layer, nb: HTMLCanvasElement, x0: number, y0: number) {
 }
 function replaceBase(l: Layer, nb: HTMLCanvasElement) {
   const t = trim(nb); if (!t) { status('Rien ne reste après le détourage.'); return; }
-  setBase(l, t.canvas, t.x, t.y);
+  setBase(l, t.canvas, t.x, t.y); commit();
 }
 $('btn-ai').onclick = async () => {
   if (!selected) return status('Sélectionne d\'abord une image.');
@@ -207,7 +255,7 @@ async function samClick(l: Layer, p: Pt, label: 0 | 1, add: boolean) {
 function samValidate() {
   if (!sam?.mask || sam.busy) return;
   const mask = sam.mask, l = sam.layer; samClear();
-  const piece = cutMask(l, c => c.drawImage(mask, 0, 0));
+  const piece = cutMask(l, c => c.drawImage(mask, 0, 0)); commit();
   status(piece ? 'Objet découpé en nouveau calque.' : 'Masque vide.');
   if (piece) { toTop(piece); select(piece); }
   if (tool === 'sam') setTool('sam');
@@ -219,6 +267,7 @@ function finishPath(screenPts: Pt[]) {
   if (tool === 'scissors') {
     const closed = jitter([...pts, pts[0]], 6 / view.s, 1.5 / view.s);
     const piece = cutPolygon(l, closed);
+    commit();
     status(piece ? 'Morceau découpé : déplace-le.' : 'Rien dans la zone tracée.');
     if (piece) { toTop(piece); select(piece); }
   } else {
@@ -230,33 +279,35 @@ function finishPath(screenPts: Pt[]) {
     const nx = -uy, ny = ux;
     const sideA = [...edge, { x: p1.x + nx * far, y: p1.y + ny * far }, { x: p0.x + nx * far, y: p0.y + ny * far }];
     const piece = cutPolygon(l, sideA);
+    if (piece) { piece.box.position.x += nx * 14; piece.box.position.y += ny * 14; }
+    commit();
     status(piece ? 'Image déchirée en deux : sépare les morceaux.' : 'La ligne ne traverse pas l\'image.');
-    if (piece) { toTop(piece); select(piece); piece.box.position.x += nx * 14; piece.box.position.y += ny * 14; }
+    if (piece) { toTop(piece); select(piece); }
   }
   setTool(tool);
 }
 
 // ---- boutons calque
 const need = () => selected ?? (status('Sélectionne un calque.'), null);
-$('btn-del').onclick = () => { const l = need(); if (l) removeLayer(l); };
+$('btn-del').onclick = () => { const l = need(); if (l) { removeLayer(l); commit(); } };
 $('btn-dup').onclick = () => {
   const l = need(); if (!l) return;
   const n = addLayer(l.base, l.name + '-copie', { pos: { x: l.box.x + 30, y: l.box.y + 30 }, rot: l.box.rotation, scale: { x: l.box.scale.x, y: l.box.scale.y } }, { border: l.border, shadow: l.shadow });
-  toTop(n);
+  toTop(n); commit();
 };
-$('btn-flip').onclick = () => { const l = need(); if (l) l.box.scale.x *= -1; };
+$('btn-flip').onclick = () => { const l = need(); if (l) { l.box.scale.x *= -1; commit(); } };
 function move(l: Layer, d: number) {
   const i = layers.indexOf(l), j = i + d;
   if (j < 0 || j >= layers.length) return;
   layers.splice(i, 1); layers.splice(j, 0, l);
   // l'index 0 du monde est la feuille
-  world.setChildIndex(l.box, j + 1);
+  world.setChildIndex(l.box, j + 1); commit();
 }
 $('btn-up').onclick = () => { const l = need(); if (l) move(l, 1); };
 $('btn-down').onclick = () => { const l = need(); if (l) move(l, -1); };
-$<HTMLInputElement>('border').oninput = e => { if (selected) { selected.border = +(e.target as HTMLInputElement).value; refresh(selected); } };
-$<HTMLInputElement>('shadow').oninput = e => { if (selected) { selected.shadow = +(e.target as HTMLInputElement).value; refresh(selected); } };
-$<HTMLInputElement>('bg').oninput = e => { bgColor = (e.target as HTMLInputElement).value; drawPaper(); };
+$<HTMLInputElement>('border').oninput = e => { if (selected) { selected.border = +(e.target as HTMLInputElement).value; refresh(selected); commitSoon(); } };
+$<HTMLInputElement>('shadow').oninput = e => { if (selected) { selected.shadow = +(e.target as HTMLInputElement).value; refresh(selected); commitSoon(); } };
+$<HTMLInputElement>('bg').oninput = e => { bgColor = (e.target as HTMLInputElement).value; drawPaper(); commitSoon(); };
 
 $('btn-word').onclick = () => {
   const word = $<HTMLInputElement>('word').value.trim(); if (!word) return;
@@ -271,6 +322,7 @@ $('btn-word').onclick = () => {
     addLayer(c, 'lettre-' + chars[i], { pos: { x: x + (c.width / 2) * sc, y: y + (Math.random() - 0.5) * 22 }, rot: (Math.random() - 0.5) * 0.35, scale: { x: sc, y: sc } });
     x += (c.width - 6) * sc;
   }
+  commit();
   status(`Mot « ${word} » composé : chaque lettre est un calque indépendant.`);
 };
 
@@ -331,7 +383,7 @@ cv.addEventListener('pointermove', e => {
   else if (drag) { const w = toWorld(p.x, p.y); drag.l.box.position.set(w.x + drag.dx, w.y + drag.dy); }
   else if (path) { path.push(p); pathG.clear().poly(path.flatMap(q => [q.x, q.y]), false).stroke({ width: 2, color: 0xffd23f }); }
 });
-const end = () => { if (path) { const pp = path; path = null; pathG.clear(); finishPath(pp); } drag = null; pan = null; };
+const end = () => { if (drag) commit(); if (path) { const pp = path; path = null; pathG.clear(); finishPath(pp); } drag = null; pan = null; };
 cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('wheel', e => {
@@ -340,10 +392,18 @@ cv.addEventListener('wheel', e => {
   if (e.altKey && selected) selected.box.scale.set(selected.box.scale.x * k, selected.box.scale.y * k);
   else if (e.shiftKey && selected) selected.box.rotation += (e.deltaY > 0 ? 1 : -1) * 0.07;
   else { const p = pos(e), w = toWorld(p.x, p.y); view.s = Math.min(8, Math.max(0.1, view.s * k)); view.x = p.x - w.x * view.s; view.y = p.y - w.y * view.s; applyView(); }
+  commitSoon();
 }, { passive: false });
 addEventListener('keydown', e => {
-  if ((e.target as HTMLElement).tagName === 'INPUT') return;
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selected) removeLayer(selected);
+  const t = e.target as HTMLInputElement;
+  if (e.ctrlKey || e.metaKey) {
+    const k = e.key.toLowerCase();
+    if (t.tagName === 'INPUT' && t.type === 'text') return;
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); } else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+    return;
+  }
+  if (t.tagName === 'INPUT' && t.type === 'text') return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selected) { removeLayer(selected); commit(); }
   if (e.key === 'Enter') samValidate();
   if (e.key === 'Escape') { samClear(); path = null; pathG.clear(); if (tool !== 'move') setTool(tool); }
 });
@@ -359,4 +419,5 @@ app.ticker.add(() => {
 
 // accès console pour les tests
 (window as any).__app = { addLayer, layers, replaceBase, cutoutFlat, get selected() { return selected; } };
+commit();
 status('Glisse des images ici, ou colle-les (Ctrl+V).');

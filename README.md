@@ -26,6 +26,7 @@ Outil « Détourer au clic » : clic sur l'objet → aperçu ; Maj+clic ajoute u
 - Ciseaux (tracé libre, bord irrégulier) et déchirure (ligne, bord fibreux, morceaux séparés)
 - Bord blanc et ombre réglables par calque, miroir, duplication, ordre
 - Lettres découpées : saisir un mot → une lettre = un calque, police/papier aléatoires
+- Annuler / rétablir (Ctrl+Z, Ctrl+Y ; 60 étapes) pour toutes les actions
 - Export PNG de la feuille, export des calques (PNG + `manifest.json` compatible Godot/animation)
 
 ## Commandes souris
