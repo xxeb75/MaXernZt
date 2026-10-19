@@ -96,6 +96,7 @@ function refresh(l: Layer) {
 }
 
 function addLayer(base: HTMLCanvasElement, name: string, at?: { pos: Pt; rot: number; scale: Pt }, opts?: Partial<Pick<Layer, 'border' | 'shadow' | 'rough' | 'id'>>): Layer {
+  stopPlay();
   const border = opts?.border ?? +$<HTMLInputElement>('border').value, shadow = opts?.shadow ?? +$<HTMLInputElement>('shadow').value;
   const rough = opts?.rough ?? +$<HTMLInputElement>('rough').value, baked = base;
   const box = new Container(), sprite = new Sprite(Texture.EMPTY), shade = new Sprite(Texture.EMPTY);
@@ -749,7 +750,10 @@ function finishMarquee(m: NonNullable<typeof marq>) {
 cv.addEventListener('pointerdown', e => {
   const p = pos(e); cv.setPointerCapture(e.pointerId); closeTextPop();
   if (e.button === 1 || e.button === 2) { pan = { sx: p.x, sy: p.y, vx: view.x, vy: view.y }; return; }
-  if (playing) { if (paused) startKeyRot(p); return; }
+  if (playing) {
+    if (paused && hitHandle(p) === 'rot' && activeKey()) { startKeyRot(p); return; }  // en pause sur une image clé : la poignée ronde règle la rotation
+    stopPlay();                                                                       // tout autre clic reprend l'édition normale
+  }
   if (tool === 'sam') {
     const w = toWorld(p.x, p.y);
     for (let i = layers.length - 1; i >= 0; i--) if (hit(layers[i], w)) { const l = layers[i]; select(l); samClick(l, w, e.altKey ? 0 : 1, e.shiftKey || e.altKey); return; }
