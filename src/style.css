@@ -147,10 +147,18 @@ body.drop #stage::after { content: ""; position: absolute; inset: 12px; border: 
 /* groupes dans le panneau des calques */
 .ly.grp .nm { color: var(--text); font-weight: 600; }
 .ly .fold { width: 18px; height: 18px; color: var(--accent); flex: none; }
-.ly .cnt { margin-left: auto; font-size: 11px; color: var(--dim); }
+.ly .cnt { font-size: 11px; color: var(--dim); }
 .chev { display: grid; place-items: center; width: 18px; height: 22px; margin-left: -4px; flex: none; color: var(--dim); border-radius: 4px; }
 .chev:hover { background: rgba(255,255,255,.08); color: var(--text); }
 .chev .ic { width: 14px; height: 14px; transition: transform .12s; }
 .chev.open .ic { transform: rotate(90deg); }
 .ly.grp { height: 38px; }
 @media (prefers-reduced-motion: reduce) { .chev .ic { transition: none; } }
+
+/* œil : visible / masqué */
+.ly .nm { flex: 1; min-width: 0; }
+.eye { display: grid; place-items: center; width: 26px; height: 26px; flex: none; border-radius: 5px; color: var(--dim); }
+.eye .ic { width: 17px; height: 17px; }
+.eye:hover { background: rgba(255,255,255,.1); color: var(--text); }
+.eye.off { color: var(--danger); }
+.ly.hid .th, .ly.hid .nm, .ly.hid .fold { opacity: .4; }

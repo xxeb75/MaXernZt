@@ -9,7 +9,7 @@ const PW = 1000, PH = 1400; // taille de la feuille
 type Pt = { x: number; y: number };
 
 interface Layer extends Leaf {
-  name: string; base: HTMLCanvasElement; baked: HTMLCanvasElement;
+  name: string; visible: boolean; base: HTMLCanvasElement; baked: HTMLCanvasElement;
   border: number; shadow: number; rough: number; letter?: LetterSpec;
   box: Container; sprite: Sprite; shade: Sprite;
 }
@@ -57,7 +57,7 @@ const toWorld = (sx: number, sy: number): Pt => world.toLocal({ x: sx, y: sy });
 
 // ---- calques
 const layers: Layer[] = [];   // ordre d'empilement (arrière → avant), dérivé de l'arbre
-const root: Group = { id: 0, name: '', collapsed: false, children: [], parent: null };
+const root: Group = { id: 0, name: '', collapsed: false, visible: true, children: [], parent: null };
 const selection = new Set<Layer>();
 let selected: Layer | null = null, nextId = 1, groupSeq = 1;
 function reflow() {
@@ -65,7 +65,12 @@ function reflow() {
   const walk = (g: Group) => { for (const c of g.children) { if (isGroup(c)) walk(c); else layers.push(c as Layer); } };
   walk(root);
   layers.forEach((l, i) => world.setChildIndex(l.box, i + 1));
+  applyVis();
 }
+const visOf = (n: Node) => (isGroup(n) ? n.visible : (n as Layer).visible);
+/** Visible seulement si le nœud et tous ses groupes le sont. */
+const shown = (n: Node) => { for (let c: Node | null = n; c; c = c.parent) if (!visOf(c)) return false; return true; };
+function applyVis() { for (const l of layers) l.box.visible = shown(l); }
 
 const texOf = (c: HTMLCanvasElement) => Texture.from(c);
 
@@ -91,7 +96,7 @@ function addLayer(base: HTMLCanvasElement, name: string, at?: { pos: Pt; rot: nu
   if (at) { box.position.set(at.pos.x, at.pos.y); box.rotation = at.rot; box.scale.set(at.scale.x, at.scale.y); }
   else box.position.set(PW / 2 + (Math.random() - 0.5) * 80, PH / 2 + (Math.random() - 0.5) * 80);
   world.addChild(box);
-  const l: Layer = { id: opts?.id ?? nextId++, parent: root, name, base, baked, border, shadow, rough, box, sprite, shade };
+  const l: Layer = { id: opts?.id ?? nextId++, parent: root, name, visible: true, base, baked, border, shadow, rough, box, sprite, shade };
   root.children.push(l); layers.push(l); refresh(l); select(l);
   return l;
 }
@@ -121,19 +126,20 @@ const worldToLayer = (l: Layer, p: Pt): Pt => l.box.toLocal(p, world);
 function hit(l: Layer, p: Pt): boolean {
   const q = worldToLayer(l, p);
   const x = Math.floor(q.x), y = Math.floor(q.y);
+  if (!l.box.visible) return false;
   if (x < 0 || y < 0 || x >= l.baked.width || y >= l.baked.height) return false;
   return l.baked.getContext('2d')!.getImageData(x, y, 1, 1).data[3] > 20;
 }
 
 // ---- historique (annuler / rétablir) : instantanés légers, les canvas de base sont immuables
-interface LState { id: number; name: string; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
+interface LState { id: number; name: string; visible: boolean; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
 interface Snap { layers: LState[]; bg: string; tree: TNode[]; sel: number[] }
 const snap = (): Snap => ({
-  layers: layers.map(l => ({ id: l.id, name: l.name, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rot: l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y })),
+  layers: layers.map(l => ({ id: l.id, name: l.name, visible: l.visible, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rot: l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y })),
   bg: bgColor, tree: serialize(root), sel: [...selection].filter(l => l !== selected).concat(selected ? [selected] : []).map(l => l.id),
 });
 const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.layers.length === b.layers.length && JSON.stringify(a.tree) === JSON.stringify(b.tree) &&
-  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
+  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.visible === v.visible && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
 const hist: Snap[] = []; let hi = -1, soon = 0;
 function updHistUI() { ($('btn-undo') as HTMLButtonElement).disabled = hi <= 0; ($('btn-redo') as HTMLButtonElement).disabled = hi >= hist.length - 1; }
 function commit() {
@@ -161,12 +167,12 @@ function restore(s: Snap) {
       l.box.position.set(st.x, st.y); l.box.rotation = st.rot; l.box.scale.set(st.sx, st.sy);
       if (dirty) refresh(l);
     }
-    l.letter = st.letter;
+    l.letter = st.letter; l.visible = st.visible !== false;
     ordered.push(l);
   }
   root.children = [];
   const byId2 = new Map(ordered.map(l => [l.id, l]));
-  buildTree(s.tree, root, id => byId2.get(id), (id, name, collapsed) => { groupSeq = Math.max(groupSeq, id + 1); return { id, name, collapsed, children: [], parent: root }; });
+  buildTree(s.tree, root, id => byId2.get(id), (id, name, collapsed, visible) => { groupSeq = Math.max(groupSeq, id + 1); return { id, name, collapsed, visible, children: [], parent: root }; });
   for (const l of ordered) if (!l.parent || !hasAncestorRoot(l)) attach(l, root);
   reflow();
   bgColor = s.bg; drawPaper(); $<HTMLInputElement>('bg').value = bgColor;
@@ -338,19 +344,19 @@ $('btn-del').onclick = () => { if (!selection.size) { status('Sélectionne un ca
 
 function cloneNode(n: Node, parent: Group, dx: number, dy: number, out: Layer[]): Node {
   if (isGroup(n)) {
-    const g: Group = { id: groupSeq++, name: n.name, collapsed: n.collapsed, children: [], parent };
+    const g: Group = { id: groupSeq++, name: n.name, collapsed: n.collapsed, visible: n.visible, children: [], parent };
     parent.children.push(g); n.children.forEach(c => cloneNode(c, g, dx, dy, out)); return g;
   }
   const l = n as Layer;
   const nl = addLayer(l.base, l.name, { pos: { x: l.box.x + dx, y: l.box.y + dy }, rot: l.box.rotation, scale: { x: l.box.scale.x, y: l.box.scale.y } }, { border: l.border, shadow: l.shadow, rough: l.rough });
-  nl.letter = l.letter; detach(nl); attach(nl, parent); out.push(nl);
+  nl.letter = l.letter; nl.visible = l.visible; detach(nl); attach(nl, parent); out.push(nl);
   return nl;
 }
 $('btn-dup').onclick = () => {
   const nodes = selectedNodes(); if (!nodes.length) { status('Sélectionne un calque.'); return; }
   const fresh: Layer[] = [];
   for (const n of nodes) {
-    const tmp: Group = { id: -1, name: '', collapsed: false, children: [], parent: null };
+    const tmp: Group = { id: -1, name: '', collapsed: false, visible: true, children: [], parent: null };
     const copy = cloneNode(n, tmp, 30, 30, fresh);
     tmp.children = []; copy.parent = null;
     if (isGroup(copy)) copy.name += ' copie'; else (copy as Layer).name += '-copie';
@@ -389,7 +395,7 @@ function groupSelection() {
   const A = lca(nodes);
   const tops = [...new Set(nodes.map(n => childOf(A, n)))].sort((x, y) => A.children.indexOf(x) - A.children.indexOf(y));
   const at = A.children.indexOf(tops[tops.length - 1]) - (tops.length - 1);
-  const g: Group = { id: groupSeq, name: 'Groupe ' + groupSeq, collapsed: false, children: [], parent: A };
+  const g: Group = { id: groupSeq, name: 'Groupe ' + groupSeq, collapsed: false, visible: true, children: [], parent: A };
   groupSeq++;
   tops.forEach(detach); attach(g, A, at); tops.forEach(n => attach(n, g));
   reflow(); setSelection(leavesOf(g) as Layer[]); commit(); status(`« ${g.name} » créé.`);
@@ -550,7 +556,7 @@ $('btn-export-layers').onclick = async () => {
     canvas: [PW, PH],
     hierarchy: hier(root),
     layers: layers.map((l, z) => ({
-      group: groupPath(l),
+      group: groupPath(l), visible: shown(l),
       name: name(l, z).replace('.png', ''), file: 'layers/' + name(l, z), w: l.baked.width, h: l.baked.height,
       x: Math.round(l.box.x), y: Math.round(l.box.y), rotation: +(l.box.rotation * 180 / Math.PI).toFixed(2),
       scale: [+l.box.scale.x.toFixed(3), +l.box.scale.y.toFixed(3)], z,
@@ -571,7 +577,7 @@ async function saveProject() {
   const out = layers.map(l => {
     let id = ids.get(l.base);
     if (!id) { id = 'img' + ids.size; ids.set(l.base, id); images[id] = l.base.toDataURL('image/png'); }
-    return { id: l.id, name: l.name, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
+    return { id: l.id, name: l.name, visible: l.visible, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
   });
   const blob = new Blob([JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, tree: serialize(root), layers: out, images })], { type: 'application/json' });
   try {
@@ -593,7 +599,7 @@ async function loadProject(f: File) {
     if (d.format !== 'maxernzt' || !Array.isArray(d.layers)) throw new Error('fichier non reconnu');
     const imgs = new Map<string, HTMLCanvasElement>();
     for (const [id, url] of Object.entries<string>(d.images)) imgs.set(id, await decode(url));
-    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
+    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
     restore({ layers: ls, bg: d.bg ?? bgColor, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); commit(); dirty = false;
@@ -662,7 +668,7 @@ function finishMarquee(m: NonNullable<typeof marq>) {
   const found = new Set<Layer>();
   for (const l of layers) {
     const cs = frameCorners(l), ax0 = Math.min(...cs.map(c => c.x)), ax1 = Math.max(...cs.map(c => c.x)), ay0 = Math.min(...cs.map(c => c.y)), ay1 = Math.max(...cs.map(c => c.y));
-    if (ax1 >= x0 && ax0 <= x1 && ay1 >= y0 && ay0 <= y1) for (const q of leavesOf(topNode(l, root))) found.add(q as Layer);
+    if (l.box.visible && ax1 >= x0 && ax0 <= x1 && ay1 >= y0 && ay0 <= y1) found.add(l);
   }
   setSelection([...(m.add ? new Set([...selection, ...found]) : found)]);
 }
@@ -686,8 +692,8 @@ cv.addEventListener('pointerdown', e => {
   let hl: Layer | null = null;
   for (let i = layers.length - 1; i >= 0; i--) if (hit(layers[i], w)) { hl = layers[i]; break; }
   if (hl) {
-    // clic = tout le groupe de plus haut niveau ; Ctrl+clic = le calque seul ; Maj+clic = ajouter / retirer
-    const deep = e.ctrlKey || e.metaKey, node: Node = deep ? hl : topNode(hl, root), ls = leavesOf(node) as Layer[];
+    // clic = l'élément ; Maj+clic = ajouter / retirer ; les groupes se sélectionnent dans le panneau
+    const node: Node = hl, ls = [hl];
     if (e.shiftKey) {
       const all = ls.every(x => selection.has(x));
       ls.forEach(x => (all ? selection.delete(x) : selection.add(x)));
@@ -695,7 +701,7 @@ cv.addEventListener('pointerdown', e => {
       return;
     }
     let collapse: Layer[] | null = null;
-    if (!selection.has(hl) || deep) setSelection(ls, hl); else if (selection.size > ls.length) collapse = ls;
+    if (!selection.has(hl)) setSelection(ls, hl); else if (selection.size > 1) collapse = ls;
     if (!collapse) toTop(node);
     drag = { items: mkItems(), sx: w.x, sy: w.y, moved: false, collapse, hit: hl };
     return;
@@ -830,6 +836,16 @@ function rename(n: Layer | Group) {
   const v = prompt('Nom', n.name);
   if (v && v.trim()) { n.name = v.trim(); commit(); }
 }
+function eyeBtn(n: Node): string {
+  return `<button class="eye${visOf(n) ? '' : ' off'}" tabindex="-1" aria-label="Afficher / masquer"><svg class="ic"><use href="#i-${visOf(n) ? 'eye' : 'eye-off'}"/></svg></button>`;
+}
+function wireEye(li: HTMLElement, n: Node) {
+  (li.querySelector('.eye') as HTMLElement).onclick = e => {
+    e.stopPropagation();
+    if (isGroup(n)) n.visible = !n.visible; else (n as Layer).visible = !(n as Layer).visible;
+    applyVis(); commit();
+  };
+}
 function pick(e: MouseEvent, ls: Layer[], primary: Layer) {
   if (e.shiftKey || e.ctrlKey || e.metaKey) {
     const all = ls.every(x => selection.has(x));
@@ -839,7 +855,7 @@ function pick(e: MouseEvent, ls: Layer[], primary: Layer) {
 }
 function rowBase(n: Node, depth: number, sel: boolean): HTMLLIElement {
   const li = document.createElement('li');
-  li.className = 'ly' + (sel ? ' sel' : ''); li.draggable = true; li.tabIndex = 0; li.style.paddingLeft = 6 + depth * 16 + 'px';
+  li.className = 'ly' + (sel ? ' sel' : '') + (shown(n) ? '' : ' hid'); li.draggable = true; li.tabIndex = 0; li.style.paddingLeft = 6 + depth * 16 + 'px';
   li.ondragstart = e => { dragNode = n; e.dataTransfer!.setData('text/plain', 'node'); e.dataTransfer!.effectAllowed = 'move'; li.classList.add('dragging'); };
   li.ondragend = () => { li.classList.remove('dragging'); dragNode = null; };
   li.ondragover = e => { if (dragNode) { e.preventDefault(); li.classList.add('over'); } };
@@ -855,8 +871,8 @@ function renderLayers() {
       if (isGroup(n)) {
         const ls = leavesOf(n) as Layer[], li = rowBase(n, depth, fullySel(n));
         li.classList.add('grp'); li.title = n.name;
-        li.innerHTML = `<button class="chev${n.collapsed ? '' : ' open'}" tabindex="-1"><svg class="ic"><use href="#i-chev"/></svg></button><svg class="ic fold"><use href="#i-folder"/></svg><span class="nm"></span><span class="cnt">${ls.length}</span>`;
-        (li.querySelector('.nm') as HTMLElement).textContent = n.name;
+        li.innerHTML = `<button class="chev${n.collapsed ? '' : ' open'}" tabindex="-1"><svg class="ic"><use href="#i-chev"/></svg></button><svg class="ic fold"><use href="#i-folder"/></svg><span class="nm"></span><span class="cnt">${ls.length}</span>${eyeBtn(n)}`;
+        (li.querySelector('.nm') as HTMLElement).textContent = n.name; wireEye(li, n);
         (li.querySelector('.chev') as HTMLElement).onclick = e => { e.stopPropagation(); n.collapsed = !n.collapsed; };
         li.onclick = e => pick(e, ls, ls[ls.length - 1]);
         li.ondblclick = () => rename(n);
@@ -864,7 +880,7 @@ function renderLayers() {
         if (!n.collapsed) walk(n, depth + 1);
       } else {
         const l = n as Layer, li = rowBase(l, depth, selection.has(l));
-        li.title = l.name; li.innerHTML = '<span class="th"><img alt=""></span><span class="nm"></span>';
+        li.title = l.name; li.innerHTML = '<span class="th"><img alt=""></span><span class="nm"></span>' + eyeBtn(l); wireEye(li, l);
         (li.querySelector('img') as HTMLImageElement).src = thumbOf(l.base); (li.querySelector('.nm') as HTMLElement).textContent = l.name;
         li.onclick = e => pick(e, [l], l);
         li.ondblclick = () => rename(l);
@@ -878,7 +894,7 @@ function renderLayers() {
 }
 $('layer-list').ondragover = e => { if (dragNode) e.preventDefault(); };
 $('layer-list').ondrop = e => { e.preventDefault(); dropOn(null); };
-const treeSig = (g: Group): string => g.children.map(c => (isGroup(c) ? `[${c.id}:${c.name}:${c.collapsed ? 1 : 0}:${fullySel(c) ? 1 : 0}${treeSig(c)}]` : `${c.id}:${(c as Layer).name}:${bid((c as Layer).base)}${selection.has(c as Layer) ? '*' : ''}`)).join(',');
+const treeSig = (g: Group): string => g.children.map(c => (isGroup(c) ? `[${c.id}:${c.name}:${c.collapsed ? 1 : 0}:${c.visible ? 1 : 0}:${fullySel(c) ? 1 : 0}${treeSig(c)}]` : `${c.id}:${(c as Layer).name}:${(c as Layer).visible ? 1 : 0}:${bid((c as Layer).base)}${selection.has(c as Layer) ? '*' : ''}`)).join(',');
 function syncPanels() {
   const sig = treeSig(root);
   if (sig !== layersSig) { layersSig = sig; renderLayers(); }
