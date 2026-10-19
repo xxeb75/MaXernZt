@@ -12,7 +12,7 @@ type Pt = { x: number; y: number };
 /** Image clé : l'élément s'arrête au point `u` (0-1) du trajet pendant `hold` s, tourne de `spin` degrés et, en option, se chiffonne en boule. */
 interface Key { u: number; hold: number; spin: number; ball: boolean }
 interface Anim { pts: Pt[]; dur: number; mode: 'loop' | 'pingpong'; ease: 'linear' | 'smooth'; follow: boolean; keys?: Key[] }
-interface BallFx { spr: Sprite; sh: Sprite; k: number }
+interface BallFx { spr: Sprite; sh: Sprite; k: number; sz: number }
 interface Layer extends Leaf {
   anim?: Anim; ball?: BallFx; name: string; visible: boolean; base: HTMLCanvasElement; baked: HTMLCanvasElement;
   border: number; shadow: number; rough: number; letter?: LetterSpec;
@@ -1053,45 +1053,98 @@ function opaqueArea(c: HTMLCanvasElement): number {
   for (let i = 3; i < d.length; i += 4) if (d[i] > 128) n++;
   return (n / (w * h)) * c.width * c.height;
 }
-function makeBall(base: HTMLCanvasElement, D: number, seed: number): HTMLCanvasElement {
-  const r = prng(seed), S = Math.round(D), c = makeCanvas(S, S), ctx = c.getContext('2d')!, R = S / 2;
-  const sm = makeCanvas(48, 48), sx = sm.getContext('2d', { willReadFrequently: true })!; sx.drawImage(base, 0, 0, 48, 48);
-  const d = sx.getImageData(0, 0, 48, 48).data, pal: number[][] = [];
-  for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) pal.push([d[i], d[i + 1], d[i + 2]]);
-  if (!pal.length) pal.push([200, 200, 190]);
-  const avg = [0, 1, 2].map(k => Math.round(pal.reduce((s2, p) => s2 + p[k], 0) / pal.length));
-  const col = (p: number[], f: number, a = 1) => `rgba(${Math.min(255, p[0] * f) | 0},${Math.min(255, p[1] * f) | 0},${Math.min(255, p[2] * f) | 0},${a})`;
-  ctx.beginPath(); // silhouette de papier froissé : rayon irrégulier
-  const N = 40, rad = Array.from({ length: N }, () => 0.86 + r() * 0.14);
-  for (let i = 0; i <= N; i++) { const a = (i / N) * Math.PI * 2, q = R * 0.97 * (rad[i % N] * 0.6 + rad[(i + 1) % N] * 0.4); const x = R + Math.cos(a) * q, y = R + Math.sin(a) * q; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
-  ctx.closePath(); ctx.fillStyle = col(avg, 1); ctx.fill(); ctx.save(); ctx.clip();
-  for (let i = 0; i < 46; i++) { // facettes : une couleur de l'image, plus ou moins éclairée
-    const cx = R + (r() - 0.5) * S * 0.9, cy = R + (r() - 0.5) * S * 0.9, rr = R * (0.14 + r() * 0.3), n = 4 + ((r() * 3) | 0), p = pal[(r() * pal.length) | 0];
-    ctx.beginPath(); for (let k = 0; k < n; k++) { const a = (k / n) * Math.PI * 2 + r(), q = rr * (0.6 + r() * 0.6); const x = cx + Math.cos(a) * q, y = cy + Math.sin(a) * q; if (k) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
-    ctx.closePath(); ctx.fillStyle = col(p, 0.72 + r() * 0.5, 0.88); ctx.fill();
+// bruit cellulaire (Worley) : facettes plates séparées par des plis, à plusieurs échelles
+const h3 = (x: number, y: number, sd: number) => {
+  let n = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(sd | 0, 2147483647)) | 0;
+  n = Math.imul(n ^ (n >>> 13), 1274126177); n ^= n >>> 16;
+  return (n >>> 0) / 4294967296;
+};
+function worley(x: number, y: number, sd: number) {
+  const xi = Math.floor(x), yi = Math.floor(y); let f1 = 9, f2 = 9, id = 0;
+  for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+    const cx = xi + i, cy = yi + j, d = Math.hypot(cx + h3(cx, cy, sd) - x, cy + h3(cx, cy, sd + 1) - y);
+    if (d < f1) { f2 = f1; f1 = d; id = (cx * 7919 + cy * 104729 + sd) | 0; } else if (d < f2) f2 = d;
   }
-  ctx.lineCap = 'round';
-  for (let i = 0; i < 20; i++) { // plis : un trait sombre doublé d'un trait clair
-    const x0 = R + (r() - 0.5) * S, y0 = R + (r() - 0.5) * S, x1 = x0 + (r() - 0.5) * R, y1 = y0 + (r() - 0.5) * R;
-    ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.beginPath(); ctx.moveTo(x0 + 1.2, y0 + 1.2); ctx.lineTo(x1 + 1.2, y1 + 1.2); ctx.stroke();
+  return { f1, f2, id };
+}
+const vn2 = (x: number, y: number, sd: number) => {
+  const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  const a = h3(xi, yi, sd), b = h3(xi + 1, yi, sd), c = h3(xi, yi + 1, sd), d = h3(xi + 1, yi + 1, sd);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+};
+const vn1 = (t: number, sd: number) => { const i = Math.floor(t), f = t - i, u = f * f * (3 - 2 * f); return h3(i, 0, sd) * (1 - u) + h3(i + 1, 0, sd) * u; };
+
+/**
+ * Boule de papier froissé : chaque pixel est éclairé selon la normale de sa facette (plis à trois échelles
+ * + volume de sphère), l'image d'origine est répartie en morceaux différents par facette, la silhouette est
+ * irrégulière avec des pointes de papier.
+ */
+function makeBall(base: HTMLCanvasElement, S: number, seed: number): HTMLCanvasElement {
+  const c = makeCanvas(S, S), ctx = c.getContext('2d')!, R = S / 2, r = prng(seed);
+  const m = 96, k = m / Math.max(base.width, base.height), sw = Math.max(1, Math.round(base.width * k)), sh = Math.max(1, Math.round(base.height * k));
+  const sm = makeCanvas(sw, sh), sx = sm.getContext('2d', { willReadFrequently: true })!; sx.drawImage(base, 0, 0, sw, sh);
+  const src = sx.getImageData(0, 0, sw, sh).data;
+  let ar = 0, ag = 0, ab = 0, an = 0;
+  for (let i = 0; i < src.length; i += 4) if (src[i + 3] > 200) { ar += src[i]; ag += src[i + 1]; ab += src[i + 2]; an++; }
+  const avg = an ? [ar / an, ag / an, ab / an] : [215, 215, 205];
+  const sample = (u: number, v: number) => {
+    const x = Math.min(sw - 1, Math.max(0, Math.floor(u * sw))), y = Math.min(sh - 1, Math.max(0, Math.floor(v * sh))), i = (y * sw + x) * 4;
+    return src[i + 3] > 120 ? [src[i], src[i + 1], src[i + 2]] : avg;
+  };
+  const spikes = Array.from({ length: 7 }, () => ({ a: r() * Math.PI * 2 - Math.PI, h: 0.08 + r() * 0.16, w: 0.16 + r() * 0.3 }));
+  const s1 = (r() * 1000) | 0, s2 = (r() * 1000) | 0;
+  const radius = (th: number) => {
+    let q = 0.76 + 0.10 * vn1(th * 2.4 + 50, s1) + 0.07 * vn1(th * 6.1 + 90, s2);
+    for (const sp of spikes) { const d = Math.abs(Math.atan2(Math.sin(th - sp.a), Math.cos(th - sp.a))); if (d < sp.w) q += sp.h * (1 - d / sp.w); }
+    return R * Math.min(0.97, q);
+  };
+  const L = (() => { const x = -0.45, y = -0.55, z = 0.7, n = Math.hypot(x, y, z); return { x: x / n, y: y / n, z: z / n }; })();
+  // relief : plis en arêtes vives (bruit « ridged » à quatre échelles, déformé pour que les plis ne soient pas réguliers)
+  const fr = [2.0, 4.3, 9.0, 18], am = [1.4, 0.62, 0.28, 0.12];
+  const H = new Float32Array(S * S);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const px = (x + 0.5 - R) / R, py = (y + 0.5 - R) / R;
+      const wx = px + 0.35 * (vn2(px * 1.6 + 4, py * 1.6, seed + 3) - 0.5), wy = py + 0.35 * (vn2(px * 1.6, py * 1.6 + 9, seed + 5) - 0.5);
+      let hh = 0;
+      for (let o = 0; o < 4; o++) hh += am[o] * (1 - Math.abs(2 * vn2(wx * fr[o] + o * 13, wy * fr[o] - o * 7, seed + o * 101) - 1));
+      H[y * S + x] = hh;
+    }
   }
-  const g = ctx.createRadialGradient(R * 0.7, R * 0.6, R * 0.1, R, R, R); // volume : lumière en haut à gauche
-  g.addColorStop(0, 'rgba(255,255,255,.32)'); g.addColorStop(0.55, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(20,10,0,.45)');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, S, S); ctx.restore();
+  const img = ctx.createImageData(S, S), d = img.data, K = 0.2 * R * 0.5;
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const dx = x + 0.5 - R, dy = y + 0.5 - R, dist = Math.hypot(dx, dy), rr = radius(Math.atan2(dy, dx));
+      if (dist > rr + 1.5) continue;
+      const px = dx / rr, py = dy / rr, i0 = y * S + x;
+      const gx = ((x < S - 1 ? H[i0 + 1] : H[i0]) - (x > 0 ? H[i0 - 1] : H[i0])) * K, gy = ((y < S - 1 ? H[i0 + S] : H[i0]) - (y > 0 ? H[i0 - S] : H[i0])) * K;
+      const q = Math.min(1, px * px + py * py), sz = Math.sqrt(Math.max(0.05, 1 - q * 0.9));
+      let Nx = px * 0.7 - gx, Ny = py * 0.7 - gy, Nz = sz * 0.9 + 0.25;
+      const nl = Math.hypot(Nx, Ny, Nz); Nx /= nl; Ny /= nl; Nz /= nl;
+      const diff = Math.max(0, Nx * L.x + Ny * L.y + Nz * L.z);
+      const occ = 0.8 + 0.2 * Math.min(1, H[i0] / 1.6);              // creux plus sombres
+      const shade = (0.5 + 0.72 * diff) * occ * (0.86 + 0.14 * sz);
+      const w = worley(px * 2.1 + 3, py * 2.1 - 5, seed + 303);       // morceaux d'image différents de part et d'autre des grands plis
+      const col = sample(0.5 + px * 0.5 + (h3(w.id, 5, seed) - 0.5) * 0.42, 0.5 + py * 0.5 + (h3(w.id, 6, seed) - 0.5) * 0.42);
+      const g = 1 + (h3(x, y, seed + 9) - 0.5) * 0.06, o4 = i0 * 4;
+      for (let ch = 0; ch < 3; ch++) d[o4 + ch] = Math.min(255, (col[ch] * 0.88 + 255 * 0.12) * shade * g);
+      d[o4 + 3] = dist < rr ? 255 : ((rr + 1.5 - dist) / 1.5) * 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
   return c;
 }
 function ensureBall(l: Layer): BallFx {
   if (l.ball) return l.ball;
-  const D = Math.max(48, 0.5 * Math.sqrt(opaqueArea(l.base))), cx = l.baked.width / 2, cy = l.baked.height / 2, sd = l.id * 31 + 7;
-  const tex = Texture.from(bake(makeBall(l.base, D, sd), l.border, l.rough, sd + 2)), spr = new Sprite(tex), sh = new Sprite(tex);
+  const D = Math.max(48, 0.5 * Math.sqrt(opaqueArea(l.base))), S = Math.round(Math.min(D, 480)), cx = l.baked.width / 2, cy = l.baked.height / 2, sd = l.id * 31 + 7;
+  const tex = Texture.from(bake(makeBall(l.base, S, sd), l.border, l.rough, sd + 2)), spr = new Sprite(tex), sh = new Sprite(tex);
   const a = l.shadow / 100;
   for (const q of [spr, sh]) q.anchor.set(0.5);
   spr.position.set(cx, cy); sh.position.set(cx + 6 * a + 2, cy + 9 * a + 2);
   sh.tint = 0; sh.filters = [new BlurFilter({ strength: 2 + 6 * a })];
   spr.visible = sh.visible = false;
   l.box.addChild(sh, spr);
-  l.ball = { spr, sh, k: Math.min(1, D / Math.max(l.base.width, l.base.height)) };
+  l.ball = { spr, sh, k: Math.min(1, D / Math.max(l.base.width, l.base.height)), sz: D / S };
   return l.ball;
 }
 function setCrumple(l: Layer, b: number) {
@@ -1107,7 +1160,7 @@ function setCrumple(l: Layer, b: number) {
   l.sprite.scale.set(f, f * (1 - 0.25 * b * (1 - b))); l.sprite.rotation = wob; l.shade.scale.copyFrom(l.sprite.scale); l.shade.rotation = wob;
   l.sprite.alpha = 1 - fade; l.shade.alpha = sa * (1 - fade);
   const bs = 1.35 - 0.35 * e;
-  fx.spr.visible = fx.sh.visible = true; fx.spr.scale.set(bs); fx.sh.scale.set(bs); fx.spr.rotation = fx.sh.rotation = -wob;
+  fx.spr.visible = fx.sh.visible = true; fx.spr.scale.set(bs * fx.sz); fx.sh.scale.set(bs * fx.sz); fx.spr.rotation = fx.sh.rotation = -wob;
   fx.spr.alpha = appear; fx.sh.alpha = sa * appear;
 }
 
@@ -1151,6 +1204,7 @@ function playUI() {
 function startPlay() {
   restPose.clear(); groupRest.clear();
   for (const l of layers) restPose.set(l, { x: l.box.x, y: l.box.y, r: l.box.rotation });
+  for (const l of layers) { let uses = false; for (let n: Node | null = l; n && n !== root; n = n.parent) if (keysOf((animOf(n) ?? { pts: [], dur: 1, mode: 'loop', ease: 'linear', follow: false }) as Anim).some(kk => kk.ball)) uses = true; if (uses) ensureBall(l); }
   playing = true; paused = false; animT = 0; playUI();
   status('Lecture — Espace pour mettre en pause, Échap pour arrêter.');
 }
