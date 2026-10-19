@@ -1,0 +1,16 @@
+:root { --bg:#1e2327; --panel:#263238; --fg:#eceff1; --accent:#ffd23f; }
+* { box-sizing:border-box; }
+body { margin:0; height:100vh; display:flex; background:var(--bg); color:var(--fg); font:14px system-ui,sans-serif; overflow:hidden; }
+#tools { width:230px; padding:12px; background:var(--panel); overflow-y:auto; flex:none; }
+h1 { margin:0 0 8px; font-size:20px; color:var(--accent); }
+h2 { margin:14px 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.08em; opacity:.6; }
+button { display:block; width:100%; margin:4px 0; padding:7px 10px; border:0; border-radius:6px; background:#37474f; color:var(--fg); cursor:pointer; text-align:left; }
+button:hover { background:#455a64; } button.on { background:var(--accent); color:#222; font-weight:600; }
+button.danger:hover { background:#c1272d; }
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:4px; } .grid button { margin:0; text-align:center; }
+.row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:6px 0; } .row input[type=range] { width:110px; }
+input[type=text] { width:100%; padding:6px; border-radius:6px; border:0; }
+#status { margin-top:14px; padding:8px; background:#1e2327; border-radius:6px; min-height:36px; }
+.help { font-size:11px; opacity:.55; line-height:1.4; }
+#stage { flex:1; position:relative; } #stage canvas { display:block; }
+body.drop #stage::after { content:"Dépose les images"; position:absolute; inset:20px; border:3px dashed var(--accent); border-radius:12px; display:grid; place-items:center; font-size:28px; background:#0006; pointer-events:none; }
