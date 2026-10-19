@@ -1,7 +1,7 @@
 import { Application, Container, Sprite, Texture, Graphics, BlurFilter, Rectangle } from 'pixi.js';
 import { PAD, makeCanvas, bake, trim, jitter } from './sticker';
 import { cutoutAI, cutoutFlat, modelAvailable } from './cutout';
-import { makeSeparate, makeGrouped, FONTS, PALETTES, type LetterOpts } from './letters';
+import { makeSeparate, makeGrouped, makeOne, FONTS, PALETTES, type LetterOpts, type LetterSpec } from './letters';
 import { samAvailable, segment, forget, type SamPoint } from './sam';
 
 const PW = 1000, PH = 1400; // taille de la feuille
@@ -9,7 +9,7 @@ type Pt = { x: number; y: number };
 
 interface Layer {
   id: number; name: string; base: HTMLCanvasElement; baked: HTMLCanvasElement;
-  border: number; shadow: number;
+  border: number; shadow: number; letter?: LetterSpec;
   box: Container; sprite: Sprite; shade: Sprite;
 }
 
@@ -109,14 +109,14 @@ function hit(l: Layer, p: Pt): boolean {
 }
 
 // ---- historique (annuler / rétablir) : instantanés légers, les canvas de base sont immuables
-interface LState { id: number; name: string; base: HTMLCanvasElement; border: number; shadow: number; x: number; y: number; rot: number; sx: number; sy: number }
+interface LState { id: number; name: string; base: HTMLCanvasElement; border: number; shadow: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
 interface Snap { layers: LState[]; bg: string; sel: number | null }
 const snap = (): Snap => ({
-  layers: layers.map(l => ({ id: l.id, name: l.name, base: l.base, border: l.border, shadow: l.shadow, x: l.box.x, y: l.box.y, rot: l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y })),
+  layers: layers.map(l => ({ id: l.id, name: l.name, base: l.base, border: l.border, shadow: l.shadow, letter: l.letter, x: l.box.x, y: l.box.y, rot: l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y })),
   bg: bgColor, sel: selected?.id ?? null,
 });
 const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.layers.length === b.layers.length &&
-  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
+  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
 const hist: Snap[] = []; let hi = -1, soon = 0;
 function updHistUI() { ($('btn-undo') as HTMLButtonElement).disabled = hi <= 0; ($('btn-redo') as HTMLButtonElement).disabled = hi >= hist.length - 1; }
 function commit() {
@@ -144,6 +144,7 @@ function restore(s: Snap) {
       l.box.position.set(st.x, st.y); l.box.rotation = st.rot; l.box.scale.set(st.sx, st.sy);
       if (dirty) refresh(l);
     }
+    l.letter = st.letter;
     ordered.push(l);
   }
   layers.length = 0; layers.push(...ordered);
@@ -180,7 +181,7 @@ addEventListener('paste', e => { if (e.clipboardData) importAll(e.clipboardData.
 function setBase(l: Layer, nb: HTMLCanvasElement, x0: number, y0: number) {
   const pivNew: Pt = { x: nb.width / 2 + PAD, y: nb.height / 2 + PAD };
   const pos = layerToWorld(l, { x: pivNew.x + x0, y: pivNew.y + y0 });
-  forget(l.base); l.base = nb; l.box.position.set(pos.x, pos.y); refresh(l);
+  forget(l.base); l.base = nb; l.letter = undefined; l.box.position.set(pos.x, pos.y); refresh(l);
 }
 function replaceBase(l: Layer, nb: HTMLCanvasElement) {
   const t = trim(nb); if (!t) { status('Rien ne reste après le détourage.'); return; }
@@ -307,7 +308,7 @@ $('btn-del').onclick = () => { const l = need(); if (l) { removeLayer(l); commit
 $('btn-dup').onclick = () => {
   const l = need(); if (!l) return;
   const n = addLayer(l.base, l.name + '-copie', { pos: { x: l.box.x + 30, y: l.box.y + 30 }, rot: l.box.rotation, scale: { x: l.box.scale.x, y: l.box.scale.y } }, { border: l.border, shadow: l.shadow });
-  toTop(n); commit();
+  n.letter = l.letter; toTop(n); commit();
 };
 $('btn-flip').onclick = () => { const l = need(); if (l) { l.box.scale.x *= -1; commit(); } };
 function move(l: Layer, d: number) {
@@ -324,8 +325,16 @@ $<HTMLInputElement>('shadow').oninput = e => { if (selected) { selected.shadow =
 $<HTMLInputElement>('bg').oninput = e => { bgColor = (e.target as HTMLInputElement).value; drawPaper(); commitSoon(); };
 
 const textPop = $('textpop');
-function closeTextPop() { textPop.classList.remove('open'); $('btn-text').classList.remove('on'); }
+let editing: Layer | null = null, loBackup: typeof lo | null = null, seedBackup = 0;
+function closeTextPop() {
+  textPop.classList.remove('open', 'editing'); $('btn-text').classList.remove('on');
+  if (editing) { // retour aux réglages d'avant la modification
+    editing = null; if (loBackup) Object.assign(lo, loBackup); letterSeed = seedBackup; loBackup = null;
+    const w = $<HTMLInputElement>('word'); w.maxLength = 24; w.value = ''; syncLetterUI();
+  }
+}
 $('btn-text').onclick = () => {
+  if (textPop.classList.contains('open')) { closeTextPop(); return; }
   const open = textPop.classList.toggle('open'); $('btn-text').classList.toggle('on', open);
   if (open) { $<HTMLInputElement>('word').focus(); renderPreview(); status('Tape un mot, Entrée pour l\'ajouter.'); }
 };
@@ -378,7 +387,27 @@ function renderPreview() {
   let x = (cvp.width - total * k) / 2;
   for (const it of items) { c.drawImage(it, x, (cvp.height - it.height * k) / 2, it.width * k, it.height * k); x += (it.width + gap) * k; }
 }
-function letterChanged() { try { localStorage.setItem(LS_KEY, JSON.stringify(lo)); } catch { /* stockage indisponible */ } syncLetterUI(); renderPreview(); }
+function applyEdit() {
+  const l = editing; if (!l?.letter) return;
+  const text = $<HTMLInputElement>('word').value || l.letter.text, o = letterOpts();
+  const c = l.letter.mode === 'grouped' ? makeGrouped(text, o, 130) : makeOne([...text][0], o, l.letter.idx, 130);
+  forget(l.base); l.base = c; l.letter = { ...l.letter, text, o }; refresh(l); commitSoon();
+}
+function letterChanged() {
+  if (!editing) { try { localStorage.setItem(LS_KEY, JSON.stringify(lo)); } catch { /* stockage indisponible */ } }
+  syncLetterUI(); renderPreview(); applyEdit();
+}
+/** Double-clic sur une lettre : réglages du panneau = ceux de la lettre, modifiés en direct. */
+function openLetterEdit(l: Layer) {
+  const sp = l.letter; if (!sp) return;
+  closeTextPop();
+  editing = l; loBackup = { ...lo }; seedBackup = letterSeed;
+  Object.assign(lo, { mode: sp.mode, font: sp.o.font, palette: sp.o.palette, paper: sp.o.paper, ink: sp.o.ink, tear: sp.o.tear, dirt: sp.o.dirt });
+  letterSeed = sp.o.seed;
+  const w = $<HTMLInputElement>('word'); w.maxLength = sp.mode === 'grouped' ? 24 : 1; w.value = sp.text;
+  textPop.classList.add('open', 'editing'); $('btn-text').classList.add('on');
+  syncLetterUI(); renderPreview(); status('Modification de la lettre en direct. ✓ pour terminer.');
+}
 fontBox.addEventListener('click', e => { const c = (e.target as HTMLElement).closest<HTMLElement>('.chip'); if (c) { lo.font = c.dataset.v!; letterChanged(); } });
 colorBox.addEventListener('click', e => { const c = (e.target as HTMLElement).closest<HTMLElement>('.chip'); if (c) { lo.palette = c.dataset.v!; letterChanged(); } });
 $('tp-mode').addEventListener('click', e => { const c = (e.target as HTMLElement).closest<HTMLElement>('.ib'); if (c) { lo.mode = c.dataset.mode as Mode; letterChanged(); } });
@@ -386,23 +415,24 @@ $('tp-tear').oninput = e => { lo.tear = +(e.target as HTMLInputElement).value; l
 $('tp-dirt').oninput = e => { lo.dirt = +(e.target as HTMLInputElement).value; letterChanged(); };
 $('tp-paper').oninput = e => { lo.paper = (e.target as HTMLInputElement).value; letterChanged(); };
 $('tp-ink').oninput = e => { lo.ink = (e.target as HTMLInputElement).value; letterChanged(); };
-$('word').addEventListener('input', renderPreview);
-$('tp-dice').onclick = () => { letterSeed = (Math.random() * 1e9) | 0; renderPreview(); };
+$('word').addEventListener('input', () => { renderPreview(); applyEdit(); });
+$('tp-dice').onclick = () => { letterSeed = (Math.random() * 1e9) | 0; renderPreview(); applyEdit(); };
 syncLetterUI();
 
 $('btn-word').onclick = () => {
+  if (editing) { commit(); closeTextPop(); status('Lettre modifiée.'); return; }
   const word = $<HTMLInputElement>('word').value.trim(); if (!word) return;
   const o = letterOpts();
   if (lo.mode === 'grouped') {
     const c = makeGrouped(word, o, 130), sc = Math.min(1, (PW - 80) / c.width);
-    addLayer(c, word, { pos: { x: PW / 2, y: PH / 2 + (Math.random() - 0.5) * 100 }, rot: (Math.random() - 0.5) * 0.06, scale: { x: sc, y: sc } });
+    addLayer(c, word, { pos: { x: PW / 2, y: PH / 2 + (Math.random() - 0.5) * 100 }, rot: (Math.random() - 0.5) * 0.06, scale: { x: sc, y: sc } }).letter = { text: word, mode: 'grouped', idx: 0, o };
   } else {
     const chars = [...word].filter(ch => ch.trim()), letters = makeSeparate(word, o, 130);
     const total = letters.reduce((t, c) => t + c.width - 6, 0), sc = Math.min(1, (PW - 80) / total);
     let x = PW / 2 - (total * sc) / 2;
     const y = PH / 2 + (Math.random() - 0.5) * 100;
     letters.forEach((c, i) => {
-      addLayer(c, 'lettre-' + chars[i], { pos: { x: x + (c.width / 2) * sc, y: y + (Math.random() - 0.5) * 22 }, rot: (Math.random() - 0.5) * 0.35, scale: { x: sc, y: sc } });
+      addLayer(c, 'lettre-' + chars[i], { pos: { x: x + (c.width / 2) * sc, y: y + (Math.random() - 0.5) * 22 }, rot: (Math.random() - 0.5) * 0.35, scale: { x: sc, y: sc } }).letter = { text: chars[i], mode: 'separate', idx: i, o };
       x += (c.width - 6) * sc;
     });
   }
@@ -450,7 +480,7 @@ async function saveProject() {
   const out = layers.map(l => {
     let id = ids.get(l.base);
     if (!id) { id = 'img' + ids.size; ids.set(l.base, id); images[id] = l.base.toDataURL('image/png'); }
-    return { id: l.id, name: l.name, image: id, border: l.border, shadow: l.shadow, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
+    return { id: l.id, name: l.name, image: id, border: l.border, shadow: l.shadow, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
   });
   const blob = new Blob([JSON.stringify({ format: 'maxernzt', version: 1, paper: [PW, PH], bg: bgColor, layers: out, images })], { type: 'application/json' });
   try {
@@ -472,7 +502,7 @@ async function loadProject(f: File) {
     if (d.format !== 'maxernzt' || !Array.isArray(d.layers)) throw new Error('fichier non reconnu');
     const imgs = new Map<string, HTMLCanvasElement>();
     for (const [id, url] of Object.entries<string>(d.images)) imgs.set(id, await decode(url));
-    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
+    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
     restore({ layers: ls, bg: d.bg ?? bgColor, sel: null });
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); commit(); dirty = false;
@@ -507,7 +537,7 @@ const HANDLE_CURSOR: Record<HandleKind, string> = { nw: 'nwse-resize', se: 'nwse
 let xf: Xf | null = null;
 let drag: { l: Layer; dx: number; dy: number } | null = null, pan: { sx: number; sy: number; vx: number; vy: number } | null = null, path: Pt[] | null = null;
 const cv = app.canvas;
-const pos = (e: PointerEvent | WheelEvent): Pt => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+const pos = (e: MouseEvent): Pt => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 cv.addEventListener('pointerdown', e => {
   const p = pos(e); cv.setPointerCapture(e.pointerId); closeTextPop();
   if (e.button === 1 || e.button === 2) { pan = { sx: p.x, sy: p.y, vx: view.x, vy: view.y }; return; }
@@ -553,6 +583,11 @@ cv.addEventListener('pointermove', e => {
 const end = () => { if (drag || xf) commit(); xf = null; if (path) { const pp = path; path = null; pathG.clear(); finishPath(pp); } drag = null; pan = null; };
 cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
 cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('dblclick', e => {
+  if (tool !== 'move') return;
+  const w = toWorld(pos(e).x, pos(e).y);
+  for (let i = layers.length - 1; i >= 0; i--) if (hit(layers[i], w)) { const l = layers[i]; select(l); if (l.letter) openLetterEdit(l); return; }
+});
 cv.addEventListener('wheel', e => {
   e.preventDefault();
   const k = e.deltaY > 0 ? 0.92 : 1 / 0.92;

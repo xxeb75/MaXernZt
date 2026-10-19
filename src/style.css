@@ -141,3 +141,5 @@ body.drop #stage::after { content: ""; position: absolute; inset: 12px; border: 
 
 @media (prefers-reduced-motion: reduce) { [data-tip]::after { transition: none; } }
 @media (max-width: 760px) { body { grid-template-columns: 48px 1fr 150px; } input[type=range] { width: 64px; } }
+#textpop.editing { box-shadow: 0 0 0 2px var(--accent), 0 10px 30px rgba(0,0,0,.55); }
+#textpop.editing .seg { opacity: .3; pointer-events: none; }

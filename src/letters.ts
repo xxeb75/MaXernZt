@@ -124,12 +124,17 @@ function render(gs: Glyph[], gap: number, padx: number, paper: string | null, in
   return c;
 }
 
+export interface LetterSpec { text: string; mode: 'grouped' | 'separate'; idx: number; o: LetterOpts }
+
+/** La lettre n° `idx` du mot, sur son propre papier (même graine = même rendu). */
+export function makeOne(ch: string, o: LetterOpts, idx: number, size = 130): HTMLCanvasElement {
+  const r = rng(o.seed + idx * 7919), s = style(o, r), fs = size * (0.85 + r() * 0.25);
+  return render([{ ch: r() < 0.3 ? ch.toUpperCase() : ch, font: s.font, fs, rot: (r() - 0.5) * 0.08 }], 0, fs * (0.14 + r() * 0.14), s.paper, s.ink, o, r);
+}
+
 /** Une pièce de papier par lettre. */
 export function makeSeparate(word: string, o: LetterOpts, size = 130): HTMLCanvasElement[] {
-  return [...word].filter(ch => ch.trim()).map((ch, i) => {
-    const r = rng(o.seed + i * 7919), s = style(o, r), fs = size * (0.85 + r() * 0.25);
-    return render([{ ch: r() < 0.3 ? ch.toUpperCase() : ch, font: s.font, fs, rot: (r() - 0.5) * 0.08 }], 0, fs * (0.14 + r() * 0.14), s.paper, s.ink, o, r);
-  });
+  return [...word].filter(ch => ch.trim()).map((ch, i) => makeOne(ch, o, i, size));
 }
 
 /** Tout le mot sur un même bout de papier. */
