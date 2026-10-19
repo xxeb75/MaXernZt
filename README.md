@@ -33,6 +33,12 @@ Outil « Détourer au clic » : clic sur l'objet → aperçu ; Maj+clic ajoute u
 - Annuler / rétablir (Ctrl+Z, Ctrl+Y ; 60 étapes) pour toutes les actions
 - Export PNG de la feuille, export des calques (PNG + `manifest.json` compatible Godot/animation)
 
+## Animation
+
+Outil trajectoire (P) : sélectionne un élément (ou un groupe dans le panneau), dessine le chemin à partir de lui ; le chemin est enregistré avec l'élément ou le groupe (les chemins s'additionnent le long de la hiérarchie). ▶ / Espace = lecture et pause, ■ / Échap = arrêt. Réglages : durée, boucle ou aller-retour, vitesse constante ou douce, orienter dans le sens du trajet.
+
+Images clés : en pause (ou en déplaçant la tête de lecture), ◆ ajoute une image clé à cet instant : l'élément s'y arrête (durée réglable), pivote pendant la pause (curseur ou poignée ronde sur le canvas) et peut, en option, se chiffonner en boule (taille proportionnelle, faite des couleurs de l'élément). Trajets, images clés, pauses, rotations et chiffonnage sont enregistrés dans le projet et dans le manifeste d'export.
+
 ## Interface
 
 Boîte à outils à gauche (pictos, info-bulle = nom + raccourci), barre projet/historique/export en haut, barre d'options du calque dessous (contour, ombre, miroir, dupliquer, ordre, supprimer, tolérance, couleur de feuille, zoom), panneau de calques à droite (clic = sélectionner, glisser = réordonner), plan de travail en tapis de coupe.

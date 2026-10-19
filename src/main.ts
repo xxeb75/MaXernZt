@@ -9,9 +9,12 @@ const PW = 1000, PH = 1400; // taille de la feuille
 type Pt = { x: number; y: number };
 
 /** Trajectoire d'un élément ou d'un groupe : points relatifs au centre, durée en secondes. */
-interface Anim { pts: Pt[]; dur: number; mode: 'loop' | 'pingpong'; ease: 'linear' | 'smooth'; follow: boolean }
+/** Image clé : l'élément s'arrête au point `u` (0-1) du trajet pendant `hold` s, tourne de `spin` degrés et, en option, se chiffonne en boule. */
+interface Key { u: number; hold: number; spin: number; ball: boolean }
+interface Anim { pts: Pt[]; dur: number; mode: 'loop' | 'pingpong'; ease: 'linear' | 'smooth'; follow: boolean; keys?: Key[] }
+interface BallFx { spr: Sprite; sh: Sprite; k: number }
 interface Layer extends Leaf {
-  anim?: Anim; name: string; visible: boolean; base: HTMLCanvasElement; baked: HTMLCanvasElement;
+  anim?: Anim; ball?: BallFx; name: string; visible: boolean; base: HTMLCanvasElement; baked: HTMLCanvasElement;
   border: number; shadow: number; rough: number; letter?: LetterSpec;
   box: Container; sprite: Sprite; shade: Sprite;
 }
@@ -82,9 +85,12 @@ function refresh(l: Layer) {
   l.sprite.texture = texOf(l.baked);
   l.shade.texture = l.sprite.texture;
   if (old !== Texture.EMPTY) old.destroy(true);
-  l.box.pivot.set(l.baked.width / 2, l.baked.height / 2);
+  const cx = l.baked.width / 2, cy = l.baked.height / 2;
+  l.box.pivot.set(cx, cy);
+  l.sprite.pivot.set(cx, cy); l.sprite.position.set(cx, cy); l.shade.pivot.set(cx, cy);
+  if (l.ball) { l.ball.spr.destroy({ texture: true }); l.ball.sh.destroy(); l.ball = undefined; }
   const a = l.shadow / 100;
-  l.shade.alpha = 0.55 * a; l.shade.position.set(6 * a + 2, 9 * a + 2);
+  l.shade.alpha = 0.55 * a; l.shade.position.set(cx + 6 * a + 2, cy + 9 * a + 2);
   (l.shade.filters as BlurFilter[])[0].strength = 2 + 6 * a;
   l.shade.visible = a > 0;
 }
@@ -743,7 +749,7 @@ function finishMarquee(m: NonNullable<typeof marq>) {
 cv.addEventListener('pointerdown', e => {
   const p = pos(e); cv.setPointerCapture(e.pointerId); closeTextPop();
   if (e.button === 1 || e.button === 2) { pan = { sx: p.x, sy: p.y, vx: view.x, vy: view.y }; return; }
-  if (playing) return;
+  if (playing) { if (paused) startKeyRot(p); return; }
   if (tool === 'sam') {
     const w = toWorld(p.x, p.y);
     for (let i = layers.length - 1; i >= 0; i--) if (hit(layers[i], w)) { const l = layers[i]; select(l); samClick(l, w, e.altKey ? 0 : 1, e.shiftKey || e.altKey); return; }
@@ -779,6 +785,16 @@ cv.addEventListener('pointerdown', e => {
 });
 cv.addEventListener('pointermove', e => {
   const p = pos(e);
+  if (kr) {
+    const w = toWorld(p.x, p.y);
+    let d = Math.atan2(w.y - kr.cy, w.x - kr.cx) - kr.last; d = Math.atan2(Math.sin(d), Math.cos(d));
+    kr.last += d; kr.acc += d;
+    let spin = kr.spin0 + (kr.acc * 180) / Math.PI;
+    if (e.shiftKey) spin = Math.round(spin / 15) * 15;
+    const a = animOf(kr.node);
+    if (a) setAnim(kr.node, { ...a, keys: keysOf(a).map((k, i) => (i === kr!.idx ? { ...k, spin: Math.round(spin) } : k)) });
+    return;
+  }
   if (xf) {
     const w = toWorld(p.x, p.y), single = xf.items.length === 1;
     if (xf.kind === 'rot') {
@@ -804,6 +820,7 @@ cv.addEventListener('pointermove', e => {
   } else if (path) { path.push(p); { const f = path.flatMap(q => [q.x, q.y]); pathG.clear().poly(f, false).stroke({ width: 5, color: 0x000000, alpha: 0.55 }).poly(f, false).stroke({ width: 2.2, color: 0xffffff }); } }
 });
 const end = () => {
+  if (kr) { commit(); kr = null; }
   if (xf) { commit(); xf = null; }
   if (drag) { if (!drag.moved && drag.collapse) setSelection(drag.collapse, drag.hit); commit(); drag = null; }
   if (marq) { const m = marq; marq = null; pathG.clear(); finishMarquee(m); }
@@ -860,7 +877,7 @@ addEventListener('keydown', e => {
 // ---- surcouche de sélection
 app.ticker.add(() => {
   selG.clear(); animG.clear();
-  if (playing) { animT += app.ticker.deltaMS / 1000; applyAnim(); syncPanels(); return; }
+  if (playing) { if (!paused) animT += app.ticker.deltaMS / 1000; applyAnim(); if (!paused) { syncPanels(); return; } }
   drawAnimPaths();
   if (selection.size > 1) for (const l of selection) { const q = frameCorners(l).flatMap(c => [c.x, c.y]); selG.poly(q).stroke({ width: 1, color: 0xffffff, alpha: 0.7 }); }
   const h = selHandles();
@@ -982,7 +999,7 @@ function syncPanels() {
 // ---- animation : une trajectoire par élément ou par groupe
 const animOf = (n: Node): Anim | undefined => (isGroup(n) ? (n.anim as Anim | undefined) : (n as Layer).anim);
 function setAnim(n: Node, a: Anim | undefined) { if (isGroup(n)) n.anim = a; else (n as Layer).anim = a; }
-const animJson = (a?: Anim) => (a ? { points: a.pts.map(p => [Math.round(p.x), Math.round(p.y)]), duration: a.dur, mode: a.mode, ease: a.ease, follow: a.follow } : null);
+const animJson = (a?: Anim) => (a ? { points: a.pts.map(p => [Math.round(p.x), Math.round(p.y)]), duration: a.dur, mode: a.mode, ease: a.ease, follow: a.follow, keys: keysOf(a).map(k => ({ progress: +k.u.toFixed(4), hold: k.hold, spin: k.spin, crumple: k.ball })) } : null);
 
 const lenCache = new WeakMap<Anim, number[]>();
 function cum(a: Anim): number[] {
@@ -997,18 +1014,107 @@ function pathAt(a: Anim, u: number) {
   const t = (d - c[i - 1]) / ((c[i] - c[i - 1]) || 1), p0 = a.pts[i - 1], p1 = a.pts[i];
   return { x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t, ang: Math.atan2(p1.y - p0.y, p1.x - p0.x) };
 }
-function sampleAnim(a: Anim, time: number) {
-  const ph = (time / a.dur) % (a.mode === 'loop' ? 1 : 2), fwd = a.mode === 'loop' || ph < 1;
-  let u = a.mode === 'loop' ? ph : ph < 1 ? ph : 2 - ph;
-  if (a.ease === 'smooth') u = u * u * (3 - 2 * u);
-  const s = pathAt(a, u);
-  return { x: s.x, y: s.y, ang: fwd ? s.ang : s.ang + Math.PI };
+const smooth = (t: number) => t * t * (3 - 2 * t);
+const keysOf = (a: Anim): Key[] => a.keys ?? [];
+const totalOf = (a: Anim) => a.dur + keysOf(a).reduce((t, k) => t + k.hold, 0);
+/** Début de chaque pause sur la ligne de temps (s). */
+function keyStarts(a: Anim): number[] {
+  let t = 0, cu = 0;
+  return keysOf(a).map(k => { t += (k.u - cu) * a.dur; cu = k.u; const st = t; t += k.hold; return st; });
+}
+/** État à l'instant `time` : avancement `u` sur le trajet, rotation ajoutée (degrés) et taux de chiffonnage (0-1). */
+function evalAnim(a: Anim, time: number) {
+  const ks = keysOf(a), tot = totalOf(a);
+  let T = time % (a.mode === 'loop' ? tot : tot * 2), fwd = true;
+  if (a.mode === 'pingpong' && T > tot) { T = 2 * tot - T; fwd = false; }
+  let t = 0, cu = 0, spin = 0, b0 = 0, u = 1, rot = 0, ball = 0, found = false;
+  const seg = (to: number) => {
+    const d = (to - cu) * a.dur;
+    if (!found && T < t + d) { const q = d > 0 ? (T - t) / d : 1; u = cu + (a.ease === 'smooth' ? smooth(q) : q) * (to - cu); rot = spin; ball = b0; found = true; }
+    t += d; cu = to;
+  };
+  for (const k of ks) {
+    seg(k.u);
+    if (!found && T < t + k.hold) { const q = k.hold > 0 ? smooth((T - t) / k.hold) : 1; u = k.u; rot = spin + q * k.spin; ball = b0 + q * ((k.ball ? 1 : 0) - b0); found = true; }
+    t += k.hold; spin += k.spin; b0 = k.ball ? 1 : 0;
+  }
+  seg(1);
+  if (!found) { u = 1; rot = spin; ball = b0; }
+  const p = pathAt(a, u);
+  return { x: p.x, y: p.y, u, ang: fwd ? p.ang : p.ang + Math.PI, rot, ball };
 }
 
-// lecture : on part de la pose de repos de chaque calque, on y ajoute les décalages de son chemin et de ceux de ses groupes
+// ---- chiffonnage : le papier se réduit et se fond dans une boule faite de ses propres couleurs, à la taille proportionnelle de l'élément
+const prng = (seed: number) => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+function opaqueArea(c: HTMLCanvasElement): number {
+  const k = 64 / Math.max(c.width, c.height), w = Math.max(1, Math.round(c.width * k)), h = Math.max(1, Math.round(c.height * k));
+  const t = makeCanvas(w, h), x = t.getContext('2d', { willReadFrequently: true })!; x.drawImage(c, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h).data; let n = 0;
+  for (let i = 3; i < d.length; i += 4) if (d[i] > 128) n++;
+  return (n / (w * h)) * c.width * c.height;
+}
+function makeBall(base: HTMLCanvasElement, D: number, seed: number): HTMLCanvasElement {
+  const r = prng(seed), S = Math.round(D), c = makeCanvas(S, S), ctx = c.getContext('2d')!, R = S / 2;
+  const sm = makeCanvas(48, 48), sx = sm.getContext('2d', { willReadFrequently: true })!; sx.drawImage(base, 0, 0, 48, 48);
+  const d = sx.getImageData(0, 0, 48, 48).data, pal: number[][] = [];
+  for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) pal.push([d[i], d[i + 1], d[i + 2]]);
+  if (!pal.length) pal.push([200, 200, 190]);
+  const avg = [0, 1, 2].map(k => Math.round(pal.reduce((s2, p) => s2 + p[k], 0) / pal.length));
+  const col = (p: number[], f: number, a = 1) => `rgba(${Math.min(255, p[0] * f) | 0},${Math.min(255, p[1] * f) | 0},${Math.min(255, p[2] * f) | 0},${a})`;
+  ctx.beginPath(); // silhouette de papier froissé : rayon irrégulier
+  const N = 40, rad = Array.from({ length: N }, () => 0.86 + r() * 0.14);
+  for (let i = 0; i <= N; i++) { const a = (i / N) * Math.PI * 2, q = R * 0.97 * (rad[i % N] * 0.6 + rad[(i + 1) % N] * 0.4); const x = R + Math.cos(a) * q, y = R + Math.sin(a) * q; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+  ctx.closePath(); ctx.fillStyle = col(avg, 1); ctx.fill(); ctx.save(); ctx.clip();
+  for (let i = 0; i < 46; i++) { // facettes : une couleur de l'image, plus ou moins éclairée
+    const cx = R + (r() - 0.5) * S * 0.9, cy = R + (r() - 0.5) * S * 0.9, rr = R * (0.14 + r() * 0.3), n = 4 + ((r() * 3) | 0), p = pal[(r() * pal.length) | 0];
+    ctx.beginPath(); for (let k = 0; k < n; k++) { const a = (k / n) * Math.PI * 2 + r(), q = rr * (0.6 + r() * 0.6); const x = cx + Math.cos(a) * q, y = cy + Math.sin(a) * q; if (k) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+    ctx.closePath(); ctx.fillStyle = col(p, 0.72 + r() * 0.5, 0.88); ctx.fill();
+  }
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 20; i++) { // plis : un trait sombre doublé d'un trait clair
+    const x0 = R + (r() - 0.5) * S, y0 = R + (r() - 0.5) * S, x1 = x0 + (r() - 0.5) * R, y1 = y0 + (r() - 0.5) * R;
+    ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.beginPath(); ctx.moveTo(x0 + 1.2, y0 + 1.2); ctx.lineTo(x1 + 1.2, y1 + 1.2); ctx.stroke();
+  }
+  const g = ctx.createRadialGradient(R * 0.7, R * 0.6, R * 0.1, R, R, R); // volume : lumière en haut à gauche
+  g.addColorStop(0, 'rgba(255,255,255,.32)'); g.addColorStop(0.55, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(20,10,0,.45)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, S, S); ctx.restore();
+  return c;
+}
+function ensureBall(l: Layer): BallFx {
+  if (l.ball) return l.ball;
+  const D = Math.max(48, 0.5 * Math.sqrt(opaqueArea(l.base))), cx = l.baked.width / 2, cy = l.baked.height / 2, sd = l.id * 31 + 7;
+  const tex = Texture.from(bake(makeBall(l.base, D, sd), l.border, l.rough, sd + 2)), spr = new Sprite(tex), sh = new Sprite(tex);
+  const a = l.shadow / 100;
+  for (const q of [spr, sh]) q.anchor.set(0.5);
+  spr.position.set(cx, cy); sh.position.set(cx + 6 * a + 2, cy + 9 * a + 2);
+  sh.tint = 0; sh.filters = [new BlurFilter({ strength: 2 + 6 * a })];
+  spr.visible = sh.visible = false;
+  l.box.addChild(sh, spr);
+  l.ball = { spr, sh, k: Math.min(1, D / Math.max(l.base.width, l.base.height)) };
+  return l.ball;
+}
+function setCrumple(l: Layer, b: number) {
+  const sa = 0.55 * (l.shadow / 100);
+  if (b <= 0.001) {
+    if (l.ball) l.ball.spr.visible = l.ball.sh.visible = false;
+    l.sprite.alpha = 1; l.sprite.scale.set(1); l.sprite.rotation = 0; l.shade.scale.set(1); l.shade.rotation = 0; l.shade.alpha = sa;
+    return;
+  }
+  const fx = ensureBall(l), e = smooth(Math.min(1, b)), fade = smooth(Math.min(1, Math.max(0, (b - 0.3) / 0.5))), appear = smooth(Math.min(1, Math.max(0, (b - 0.2) / 0.5)));
+  const wob = Math.sin(animT * 17) * 0.5 * b * (1 - b);       // le papier se tord en se refermant
+  const f = 1 + (fx.k - 1) * e;
+  l.sprite.scale.set(f, f * (1 - 0.25 * b * (1 - b))); l.sprite.rotation = wob; l.shade.scale.copyFrom(l.sprite.scale); l.shade.rotation = wob;
+  l.sprite.alpha = 1 - fade; l.shade.alpha = sa * (1 - fade);
+  const bs = 1.35 - 0.35 * e;
+  fx.spr.visible = fx.sh.visible = true; fx.spr.scale.set(bs); fx.sh.scale.set(bs); fx.spr.rotation = fx.sh.rotation = -wob;
+  fx.spr.alpha = appear; fx.sh.alpha = sa * appear;
+}
+
+// ---- lecture : on part de la pose de repos de chaque calque, on y ajoute les décalages de son chemin et de ceux de ses groupes
 const restPose = new Map<Layer, { x: number; y: number; r: number }>();
 const groupRest = new Map<Group, Pt>();
-let playing = false, animT = 0;
+let playing = false, paused = false, animT = 0;
 function groupRestCenter(g: Group): Pt {
   let c = groupRest.get(g);
   if (!c) {
@@ -1022,38 +1128,44 @@ function applyAnim() {
   for (const l of layers) {
     let r0 = restPose.get(l);
     if (!r0) { r0 = { x: l.box.x, y: l.box.y, r: l.box.rotation }; restPose.set(l, r0); }
-    let x = r0.x, y = r0.y, r = r0.r;
+    let x = r0.x, y = r0.y, r = r0.r, ball = 0;
     const step = (a: Anim | undefined, c: Pt | null) => {
       if (!a || a.pts.length < 2) return;
-      const s = sampleAnim(a, animT);
-      if (a.follow) {
-        const d = s.ang - pathAt(a, 0).ang;
-        if (c) { const rx = x - c.x, ry = y - c.y, cs = Math.cos(d), sn = Math.sin(d); x = c.x + rx * cs - ry * sn; y = c.y + rx * sn + ry * cs; }
-        r += d;
-      }
-      x += s.x; y += s.y;
+      const s = evalAnim(a, animT), d = (a.follow ? s.ang - pathAt(a, 0).ang : 0) + (s.rot * Math.PI) / 180;
+      if (d && c) { const rx = x - c.x, ry = y - c.y, cs = Math.cos(d), sn = Math.sin(d); x = c.x + rx * cs - ry * sn; y = c.y + rx * sn + ry * cs; }
+      r += d; x += s.x; y += s.y; ball = Math.max(ball, s.ball);
     };
     step(l.anim, null);
     for (let g: Group | null = l.parent; g && g !== root; g = g.parent) step(g.anim as Anim | undefined, groupRestCenter(g));
-    l.box.position.set(x, y); l.box.rotation = r;
+    l.box.position.set(x, y); l.box.rotation = r; setCrumple(l, ball);
   }
 }
 const anyAnim = () => layers.some(l => l.anim) || (() => { let f = false; const w = (g: Group) => { for (const c of g.children) if (isGroup(c)) { if (c.anim) f = true; w(c); } }; w(root); return f; })();
+function playUI() {
+  const b = $('btn-play');
+  b.classList.toggle('on', playing && !paused);
+  b.querySelector('use')!.setAttribute('href', playing && !paused ? '#i-pause' : '#i-play');
+  ($('btn-stop') as HTMLButtonElement).disabled = !playing;
+  ui.alpha = playing && !paused ? 0 : 1;
+}
 function startPlay() {
   restPose.clear(); groupRest.clear();
   for (const l of layers) restPose.set(l, { x: l.box.x, y: l.box.y, r: l.box.rotation });
-  playing = true; animT = 0; ui.alpha = 0.0;
-  $('btn-play').classList.add('on'); $('btn-play').querySelector('use')!.setAttribute('href', '#i-stop');
-  status('Lecture en cours — Espace ou Échap pour arrêter.');
+  playing = true; paused = false; animT = 0; playUI();
+  status('Lecture — Espace pour mettre en pause, Échap pour arrêter.');
 }
+function pausePlay() { if (!playing) startPlay(); paused = true; playUI(); status('En pause : ◆ ajoute une image clé ; la poignée ronde fait pivoter.'); }
 function stopPlay() {
   if (!playing) return;
-  for (const [l, p] of restPose) { l.box.position.set(p.x, p.y); l.box.rotation = p.r; }
-  restPose.clear(); groupRest.clear(); playing = false; ui.alpha = 1;
-  $('btn-play').classList.remove('on'); $('btn-play').querySelector('use')!.setAttribute('href', '#i-play');
-  status('Lecture arrêtée.');
+  for (const [l, p] of restPose) { l.box.position.set(p.x, p.y); l.box.rotation = p.r; setCrumple(l, 0); }
+  restPose.clear(); groupRest.clear(); playing = false; paused = false; playUI(); status('Lecture arrêtée.');
 }
-$('btn-play').onclick = () => { if (playing) stopPlay(); else if (anyAnim()) startPlay(); else status("Aucune trajectoire : choisis l'outil trajectoire (P) et dessine un chemin."); };
+$('btn-play').onclick = () => {
+  if (playing && !paused) { pausePlay(); return; }
+  if (playing) { paused = false; playUI(); status('Lecture.'); return; }
+  if (anyAnim()) startPlay(); else status("Aucune trajectoire : choisis l'outil trajectoire (P) et dessine un chemin.");
+};
+$('btn-stop').onclick = stopPlay;
 
 /** Rééchantillonne le tracé à pas constant puis l'adoucit (extrémités fixes). */
 function smoothPath(P: Pt[]): Pt[] {
@@ -1075,16 +1187,17 @@ function finishAnimPath(screenPts: Pt[]) {
   const pts = smoothPath(screenPts.map(p => toWorld(p.x, p.y)));
   if (cum({ pts, dur: 1, mode: 'loop', ease: 'linear', follow: false }).at(-1)! < 20) { status('Trajectoire trop courte.'); return; }
   const rel = pts.map(p => ({ x: p.x - pts[0].x, y: p.y - pts[0].y }));
-  for (const n of nodes) setAnim(n, { dur: 3, mode: 'loop', ease: 'linear', follow: false, ...animOf(n), pts: rel });
+  for (const n of nodes) setAnim(n, { dur: 3, mode: 'loop', ease: 'linear', follow: false, keys: [], ...animOf(n), pts: rel });
   commit(); setTool('path');
-  status('Trajectoire créée : ▶ (Espace) pour la lire.');
+  status('Trajectoire créée : ▶ (Espace) pour la lire ; mets en pause puis ◆ pour ajouter une image clé.');
 }
 
 // affichage des trajectoires (pointillés) : celles de la sélection en plein, les autres en discret
 function nodeCenter(n: Node): Pt {
-  if (!isGroup(n)) { const l = n as Layer; return { x: l.box.x, y: l.box.y }; }
+  const at = (l: Layer) => restPose.get(l) ?? { x: l.box.x, y: l.box.y };
+  if (!isGroup(n)) return at(n as Layer);
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const l of leavesOf(n) as Layer[]) { x0 = Math.min(x0, l.box.x); x1 = Math.max(x1, l.box.x); y0 = Math.min(y0, l.box.y); y1 = Math.max(y1, l.box.y); }
+  for (const l of leavesOf(n) as Layer[]) { const r = at(l); x0 = Math.min(x0, r.x); x1 = Math.max(x1, r.x); y0 = Math.min(y0, r.y); y1 = Math.max(y1, r.y); }
   return { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
 }
 function dashed(g: Graphics, P: Pt[], dash: number, gap: number) {
@@ -1120,25 +1233,92 @@ function drawAnimPaths() {
   walk(root);
 }
 
-// barre d'animation : réglages des trajectoires sélectionnées
+// barre d'animation : ligne de temps, réglages du trajet et des images clés
 const animNodes = () => selectedNodes().filter(n => animOf(n));
+const tlTotal = () => {
+  const an = animNodes()[0]; if (an) return totalOf(animOf(an)!);
+  let m = 0; const w = (g: Group) => { for (const c of g.children) { const a = animOf(c); if (a) m = Math.max(m, totalOf(a)); if (isGroup(c)) w(c); } }; w(root);
+  return m || 3;
+};
 function editAnim(f: (a: Anim) => Anim) { for (const n of animNodes()) setAnim(n, f(animOf(n)!)); commitSoon(); }
+const curT = (a: Anim) => { const tot = totalOf(a); return a.mode === 'loop' ? animT % tot : Math.min(animT % (tot * 2), tot); };
+/** Image clé dont la pause contient la tête de lecture. */
+function activeKey() {
+  const an = animNodes()[0]; if (!an || !playing) return null;
+  const a = animOf(an)!, ks = keysOf(a), st = keyStarts(a), T = curT(a);
+  const i = ks.findIndex((k, j) => T >= st[j] - 0.03 && T <= st[j] + k.hold + 0.03);
+  return i < 0 ? null : { node: an, a, i };
+}
+function editKey(f: (k: Key) => Key) {
+  const ak = activeKey(); if (!ak) return;
+  setAnim(ak.node, { ...ak.a, keys: keysOf(ak.a).map((k, i) => (i === ak.i ? f(k) : k)) }); commitSoon();
+}
+function playheadTo(t: number) { if (!playing) startPlay(); paused = true; playUI(); animT = t; }
+let kr: { node: Node; idx: number; spin0: number; cx: number; cy: number; last: number; acc: number } | null = null;
+function startKeyRot(p: Pt) {
+  const ak = activeKey(); if (!ak || hitHandle(p) !== 'rot') return;
+  const c = selCenterWorld(), w = toWorld(p.x, p.y), a0 = Math.atan2(w.y - c.y, w.x - c.x);
+  kr = { node: ak.node, idx: ak.i, spin0: keysOf(ak.a)[ak.i].spin, cx: c.x, cy: c.y, last: a0, acc: 0 };
+}
 $<HTMLInputElement>('anim-dur').oninput = e => { const v = +(e.target as HTMLInputElement).value / 10; editAnim(a => ({ ...a, dur: v })); };
 $('btn-amode').onclick = () => editAnim(a => ({ ...a, mode: a.mode === 'loop' ? 'pingpong' : 'loop' }));
 $('btn-aease').onclick = () => editAnim(a => ({ ...a, ease: a.ease === 'linear' ? 'smooth' : 'linear' }));
 $('btn-afollow').onclick = () => editAnim(a => ({ ...a, follow: !a.follow }));
-$('btn-adel').onclick = () => { const ns = animNodes(); if (!ns.length) return; ns.forEach(n => setAnim(n, undefined)); commit(); };
+$('btn-adel').onclick = () => { const ns = animNodes(); if (!ns.length) return; stopPlay(); ns.forEach(n => setAnim(n, undefined)); commit(); };
+$<HTMLInputElement>('tl').oninput = e => { playheadTo((+(e.target as HTMLInputElement).value / 1000) * tlTotal()); };
+$('btn-key').onclick = () => {
+  const an = animNodes()[0]; if (!an) { status("Sélectionne un élément qui a une trajectoire."); return; }
+  const a = animOf(an)!;
+  if (!playing) startPlay(); paused = true; playUI();
+  if (activeKey()) { status('Il y a déjà une image clé ici.'); return; }
+  const u = evalAnim(a, curT(a)).u, hold = 0.8;
+  const keys = [...keysOf(a), { u, hold, spin: 0, ball: false }].sort((x, y) => x.u - y.u);
+  const na = { ...a, keys }; setAnim(an, na); commit();
+  animT = keyStarts(na)[keys.findIndex(k => k.u === u)] + hold;   // tête de lecture à la fin de la pause : on voit le résultat
+  status('Image clé ajoutée : règle la pause, la rotation (poignée ronde) ou le chiffonnage.');
+};
+$<HTMLInputElement>('key-hold').oninput = e => { const v = +(e.target as HTMLInputElement).value / 10; editKey(k => ({ ...k, hold: v })); };
+$<HTMLInputElement>('key-spin').oninput = e => { const v = +(e.target as HTMLInputElement).value; editKey(k => ({ ...k, spin: v })); };
+$('btn-kball').onclick = () => editKey(k => ({ ...k, ball: !k.ball }));
+$('btn-kdel').onclick = () => { const ak = activeKey(); if (!ak) return; setAnim(ak.node, { ...ak.a, keys: keysOf(ak.a).filter((_, i) => i !== ak.i) }); commit(); };
+
+let marksSig = '';
 function syncAnimBar() {
-  const an = animNodes()[0], a = an ? animOf(an) : undefined;
+  const an = animNodes()[0], a = an ? animOf(an) : undefined, ak = activeKey();
   $('animbar').classList.toggle('noanim', !a);
+  $('animbar').classList.toggle('nokey', !ak);
   ($('btn-play') as HTMLButtonElement).disabled = !playing && !anyAnim();
-  if (!a) return;
-  const r = $<HTMLInputElement>('anim-dur');
-  if (document.activeElement !== r) r.value = String(Math.round(a.dur * 10));
-  r.style.setProperty('--p', ((+r.value - +r.min) / (+r.max - +r.min)) * 100 + '%'); $('v-anim-dur').textContent = (+r.value / 10).toFixed(1) + ' s';
-  $('btn-amode').querySelector('use')!.setAttribute('href', a.mode === 'loop' ? '#i-loop' : '#i-pingpong');
-  $('btn-aease').querySelector('use')!.setAttribute('href', a.ease === 'linear' ? '#i-ease-linear' : '#i-ease-smooth');
-  $('btn-afollow').classList.toggle('on', a.follow);
+  const tot = a ? totalOf(a) : tlTotal(), tl = $<HTMLInputElement>('tl');
+  if (document.activeElement !== tl) tl.value = String(playing ? Math.round(((a ? curT(a) : animT % tot) / tot) * 1000) : 0);
+  tl.style.setProperty('--p', +tl.value / 10 + '%');
+  $('v-tl').textContent = `${(playing ? (a ? curT(a) : animT % tot) : 0).toFixed(1)} / ${tot.toFixed(1)} s`;
+  // repères des images clés sur la ligne de temps
+  const ks = a ? keysOf(a) : [], st = a ? keyStarts(a) : [], sig = a ? ks.map((k, i) => `${st[i].toFixed(2)}:${k.hold}:${i === ak?.i ? 1 : 0}`).join('|') + '/' + tot.toFixed(2) : '';
+  if (sig !== marksSig) {
+    marksSig = sig; const box = $('tl-keys'); box.innerHTML = '';
+    ks.forEach((k, i) => {
+      const m = document.createElement('button');
+      m.className = 'kmark' + (i === ak?.i ? ' on' : ''); m.style.left = ((st[i] + k.hold / 2) / tot) * 100 + '%'; m.style.width = Math.max(10, (k.hold / tot) * 100) + '%'; m.title = 'Image clé';
+      m.onclick = () => playheadTo(st[i] + k.hold);
+      box.appendChild(m);
+    });
+  }
+  if (a) {
+    const r = $<HTMLInputElement>('anim-dur');
+    if (document.activeElement !== r) r.value = String(Math.round(a.dur * 10));
+    r.style.setProperty('--p', ((+r.value - +r.min) / (+r.max - +r.min)) * 100 + '%'); $('v-anim-dur').textContent = (+r.value / 10).toFixed(1) + ' s';
+    $('btn-amode').querySelector('use')!.setAttribute('href', a.mode === 'loop' ? '#i-loop' : '#i-pingpong');
+    $('btn-aease').querySelector('use')!.setAttribute('href', a.ease === 'linear' ? '#i-ease-linear' : '#i-ease-smooth');
+    $('btn-afollow').classList.toggle('on', a.follow);
+  }
+  if (ak) {
+    const k = keysOf(ak.a)[ak.i], h = $<HTMLInputElement>('key-hold'), sp = $<HTMLInputElement>('key-spin');
+    if (document.activeElement !== h) h.value = String(Math.round(k.hold * 10));
+    if (document.activeElement !== sp) sp.value = String(k.spin);
+    h.style.setProperty('--p', ((+h.value - +h.min) / (+h.max - +h.min)) * 100 + '%'); sp.style.setProperty('--p', ((+sp.value - +sp.min) / (+sp.max - +sp.min)) * 100 + '%');
+    $('v-key-hold').textContent = k.hold.toFixed(1) + ' s'; $('v-key-spin').textContent = k.spin + '°';
+    $('btn-kball').classList.toggle('on', k.ball);
+  }
 }
 
 // accès console pour les tests
