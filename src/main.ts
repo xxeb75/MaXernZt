@@ -3,12 +3,13 @@ import { PAD, makeCanvas, bake, trim, jitter } from './sticker';
 import { cutoutAI, cutoutFlat, modelAvailable } from './cutout';
 import { makeSeparate, makeGrouped, makeOne, FONTS, PALETTES, type LetterOpts, type LetterSpec } from './letters';
 import { samAvailable, segment, forget, type SamPoint } from './sam';
+import { type Group, type Leaf, type Node, type TNode, isGroup, leavesOf, detach, attach, prune, topNode, lca, childOf, contains, serialize, buildTree } from './groups';
 
 const PW = 1000, PH = 1400; // taille de la feuille
 type Pt = { x: number; y: number };
 
-interface Layer {
-  id: number; name: string; base: HTMLCanvasElement; baked: HTMLCanvasElement;
+interface Layer extends Leaf {
+  name: string; base: HTMLCanvasElement; baked: HTMLCanvasElement;
   border: number; shadow: number; rough: number; letter?: LetterSpec;
   box: Container; sprite: Sprite; shade: Sprite;
 }
@@ -55,8 +56,16 @@ app.renderer.on('resize', () => { if (!layers.length) fitView(); });
 const toWorld = (sx: number, sy: number): Pt => world.toLocal({ x: sx, y: sy });
 
 // ---- calques
-const layers: Layer[] = [];
-let selected: Layer | null = null, nextId = 1;
+const layers: Layer[] = [];   // ordre d'empilement (arrière → avant), dérivé de l'arbre
+const root: Group = { id: 0, name: '', collapsed: false, children: [], parent: null };
+const selection = new Set<Layer>();
+let selected: Layer | null = null, nextId = 1, groupSeq = 1;
+function reflow() {
+  layers.length = 0;
+  const walk = (g: Group) => { for (const c of g.children) { if (isGroup(c)) walk(c); else layers.push(c as Layer); } };
+  walk(root);
+  layers.forEach((l, i) => world.setChildIndex(l.box, i + 1));
+}
 
 const texOf = (c: HTMLCanvasElement) => Texture.from(c);
 
@@ -82,19 +91,27 @@ function addLayer(base: HTMLCanvasElement, name: string, at?: { pos: Pt; rot: nu
   if (at) { box.position.set(at.pos.x, at.pos.y); box.rotation = at.rot; box.scale.set(at.scale.x, at.scale.y); }
   else box.position.set(PW / 2 + (Math.random() - 0.5) * 80, PH / 2 + (Math.random() - 0.5) * 80);
   world.addChild(box);
-  const l: Layer = { id: opts?.id ?? nextId++, name, base, baked, border, shadow, rough, box, sprite, shade };
-  layers.push(l); refresh(l); select(l);
+  const l: Layer = { id: opts?.id ?? nextId++, parent: root, name, base, baked, border, shadow, rough, box, sprite, shade };
+  root.children.push(l); layers.push(l); refresh(l); select(l);
   return l;
 }
 
-function select(l: Layer | null) {
-  selected = l;
+function setSelection(ls: Layer[], primary?: Layer) {
+  selection.clear(); ls.forEach(x => selection.add(x));
+  selected = primary && selection.has(primary) ? primary : ls[ls.length - 1] ?? null;
+  const l = selected;
   if (l) { $<HTMLInputElement>('border').value = String(l.border); $<HTMLInputElement>('shadow').value = String(l.shadow); $<HTMLInputElement>('rough').value = String(l.rough); }
 }
-const toTop = (l: Layer) => { world.addChild(l.box); layers.splice(layers.indexOf(l), 1); layers.push(l); };
+const select = (l: Layer | null) => setSelection(l ? [l] : [], l ?? undefined);
+/** Place un nœud au premier plan de son groupe. */
+const toTop = (n: Node) => { const p = n.parent!; detach(n); attach(n, p); reflow(); };
+/** Place `n` juste au-dessus de `ref`, dans le même groupe. */
+const placeAbove = (n: Layer, ref: Layer) => { detach(n); attach(n, ref.parent, ref.parent.children.indexOf(ref) + 1); reflow(); };
 function removeLayer(l: Layer) {
-  layers.splice(layers.indexOf(l), 1); l.box.destroy({ children: true, texture: true });
-  if (selected === l) select(layers[layers.length - 1] ?? null);
+  const p = l.parent; detach(l); prune(p); selection.delete(l);
+  const i = layers.indexOf(l); if (i >= 0) layers.splice(i, 1);
+  l.box.destroy({ children: true, texture: true });
+  if (selected === l) { const rest = [...selection]; if (rest.length) setSelection(rest); else select(layers[layers.length - 1] ?? null); }
 }
 
 /** Point en pixels du canvas « baked » d'un calque → coordonnées monde. */
@@ -110,12 +127,12 @@ function hit(l: Layer, p: Pt): boolean {
 
 // ---- historique (annuler / rétablir) : instantanés légers, les canvas de base sont immuables
 interface LState { id: number; name: string; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
-interface Snap { layers: LState[]; bg: string; sel: number | null }
+interface Snap { layers: LState[]; bg: string; tree: TNode[]; sel: number[] }
 const snap = (): Snap => ({
   layers: layers.map(l => ({ id: l.id, name: l.name, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rot: l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y })),
-  bg: bgColor, sel: selected?.id ?? null,
+  bg: bgColor, tree: serialize(root), sel: [...selection].filter(l => l !== selected).concat(selected ? [selected] : []).map(l => l.id),
 });
-const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.layers.length === b.layers.length &&
+const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.layers.length === b.layers.length && JSON.stringify(a.tree) === JSON.stringify(b.tree) &&
   a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
 const hist: Snap[] = []; let hi = -1, soon = 0;
 function updHistUI() { ($('btn-undo') as HTMLButtonElement).disabled = hi <= 0; ($('btn-redo') as HTMLButtonElement).disabled = hi >= hist.length - 1; }
@@ -147,11 +164,16 @@ function restore(s: Snap) {
     l.letter = st.letter;
     ordered.push(l);
   }
-  layers.length = 0; layers.push(...ordered);
-  ordered.forEach((l, i) => world.setChildIndex(l.box, i + 1));
+  root.children = [];
+  const byId2 = new Map(ordered.map(l => [l.id, l]));
+  buildTree(s.tree, root, id => byId2.get(id), (id, name, collapsed) => { groupSeq = Math.max(groupSeq, id + 1); return { id, name, collapsed, children: [], parent: root }; });
+  for (const l of ordered) if (!l.parent || !hasAncestorRoot(l)) attach(l, root);
+  reflow();
   bgColor = s.bg; drawPaper(); $<HTMLInputElement>('bg').value = bgColor;
-  select(layers.find(l => l.id === s.sel) ?? null);
+  const sl = s.sel.map(id => byId2.get(id)).filter((x): x is Layer => !!x);
+  setSelection(sl, sl[sl.length - 1]);
 }
+function hasAncestorRoot(l: Layer) { let g: Group | null = l.parent; while (g) { if (g === root) return l.parent.children.includes(l); g = g.parent; } return false; }
 function undo() { if (hi > 0) { hi--; restore(hist[hi]); updHistUI(); status('Annulé.'); } }
 function redo() { if (hi < hist.length - 1) { hi++; restore(hist[hi]); updHistUI(); status('Rétabli.'); } }
 $('btn-undo').onclick = undo; $('btn-redo').onclick = redo;
@@ -230,7 +252,7 @@ function cutMask(l: Layer, fillMask: (c: CanvasRenderingContext2D) => void): Lay
   const t = trim(piece); if (!t) return null;
   const nl = addLayer(t.canvas, l.name + '-morceau', { pos: { x: 0, y: 0 }, rot: l.box.rotation, scale: { x: l.box.scale.x, y: l.box.scale.y } }, { border: l.border, shadow: l.shadow, rough: l.rough });
   const pos = layerToWorld(l, { x: nl.baked.width / 2 + t.x, y: nl.baked.height / 2 + t.y });
-  nl.box.position.set(pos.x, pos.y);
+  nl.box.position.set(pos.x, pos.y); placeAbove(nl, l);
   const hole = makeCanvas(w, h), hc = hole.getContext('2d')!;
   hc.drawImage(l.base, 0, 0); hc.globalCompositeOperation = 'destination-out'; hc.drawImage(mask, 0, 0);
   const tt = trim(hole);
@@ -272,7 +294,7 @@ function samValidate() {
   const mask = sam.mask, l = sam.layer; samClear();
   const piece = cutMask(l, c => c.drawImage(mask, 0, 0)); commit();
   status(piece ? 'Objet découpé en nouveau calque.' : 'Masque vide.');
-  if (piece) { toTop(piece); select(piece); }
+  if (piece) select(piece);
   if (tool === 'sam') setTool('sam');
 }
 
@@ -284,7 +306,7 @@ function finishPath(screenPts: Pt[]) {
     const piece = cutPolygon(l, closed);
     commit();
     status(piece ? 'Morceau découpé : déplace-le.' : 'Rien dans la zone tracée.');
-    if (piece) { toTop(piece); select(piece); }
+    if (piece) select(piece);
   } else {
     // déchirure : droite entre premier et dernier point, prolongée, bord fibreux
     const a = pts[0], b = pts[pts.length - 1];
@@ -297,32 +319,96 @@ function finishPath(screenPts: Pt[]) {
     if (piece) { piece.box.position.x += nx * 14; piece.box.position.y += ny * 14; }
     commit();
     status(piece ? 'Image déchirée en deux : sépare les morceaux.' : 'La ligne ne traverse pas l\'image.');
-    if (piece) { toTop(piece); select(piece); }
+    if (piece) select(piece);
   }
   setTool(tool);
 }
 
 // ---- boutons calque
 const need = () => selected ?? (status('Sélectionne un calque.'), null);
-$('btn-del').onclick = () => { const l = need(); if (l) { removeLayer(l); commit(); } };
-$('btn-dup').onclick = () => {
-  const l = need(); if (!l) return;
-  const n = addLayer(l.base, l.name + '-copie', { pos: { x: l.box.x + 30, y: l.box.y + 30 }, rot: l.box.rotation, scale: { x: l.box.scale.x, y: l.box.scale.y } }, { border: l.border, shadow: l.shadow, rough: l.rough });
-  n.letter = l.letter; toTop(n); commit();
-};
-$('btn-flip').onclick = () => { const l = need(); if (l) { l.box.scale.x *= -1; commit(); } };
-function move(l: Layer, d: number) {
-  const i = layers.indexOf(l), j = i + d;
-  if (j < 0 || j >= layers.length) return;
-  layers.splice(i, 1); layers.splice(j, 0, l);
-  // l'index 0 du monde est la feuille
-  world.setChildIndex(l.box, j + 1); commit();
+const fullySel = (g: Group) => { const ls = leavesOf(g); return ls.length > 0 && ls.every(x => selection.has(x as Layer)); };
+/** Les plus grands nœuds entièrement sélectionnés (un groupe complet compte pour un seul), dans l'ordre de l'arbre. */
+function selectedNodes(): Node[] {
+  const out: Node[] = [];
+  const walk = (g: Group) => { for (const c of g.children) { if (!isGroup(c)) { if (selection.has(c as Layer)) out.push(c); } else if (fullySel(c)) out.push(c); else walk(c); } };
+  walk(root);
+  return out;
 }
-$('btn-up').onclick = () => { const l = need(); if (l) move(l, 1); };
-$('btn-down').onclick = () => { const l = need(); if (l) move(l, -1); };
-$<HTMLInputElement>('border').oninput = e => { if (selected) { selected.border = +(e.target as HTMLInputElement).value; refresh(selected); commitSoon(); } };
-$<HTMLInputElement>('rough').oninput = e => { if (selected) { selected.rough = +(e.target as HTMLInputElement).value; refresh(selected); commitSoon(); } };
-$<HTMLInputElement>('shadow').oninput = e => { if (selected) { selected.shadow = +(e.target as HTMLInputElement).value; refresh(selected); commitSoon(); } };
+$('btn-del').onclick = () => { if (!selection.size) { status('Sélectionne un calque.'); return; } [...selection].forEach(removeLayer); setSelection([]); commit(); };
+
+function cloneNode(n: Node, parent: Group, dx: number, dy: number, out: Layer[]): Node {
+  if (isGroup(n)) {
+    const g: Group = { id: groupSeq++, name: n.name, collapsed: n.collapsed, children: [], parent };
+    parent.children.push(g); n.children.forEach(c => cloneNode(c, g, dx, dy, out)); return g;
+  }
+  const l = n as Layer;
+  const nl = addLayer(l.base, l.name, { pos: { x: l.box.x + dx, y: l.box.y + dy }, rot: l.box.rotation, scale: { x: l.box.scale.x, y: l.box.scale.y } }, { border: l.border, shadow: l.shadow, rough: l.rough });
+  nl.letter = l.letter; detach(nl); attach(nl, parent); out.push(nl);
+  return nl;
+}
+$('btn-dup').onclick = () => {
+  const nodes = selectedNodes(); if (!nodes.length) { status('Sélectionne un calque.'); return; }
+  const fresh: Layer[] = [];
+  for (const n of nodes) {
+    const tmp: Group = { id: -1, name: '', collapsed: false, children: [], parent: null };
+    const copy = cloneNode(n, tmp, 30, 30, fresh);
+    tmp.children = []; copy.parent = null;
+    if (isGroup(copy)) copy.name += ' copie'; else (copy as Layer).name += '-copie';
+    const p = n.parent!; attach(copy, p, p.children.indexOf(n) + 1);
+  }
+  reflow(); setSelection(fresh); commit();
+};
+
+/** Centre de la sélection en coordonnées monde (calque seul : son centre ; sinon centre de la boîte englobante). */
+function selCenterWorld(): Pt {
+  if (selection.size === 1) { const l = [...selection][0]; return { x: l.box.x, y: l.box.y }; }
+  const b = selBounds(); return toWorld((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2);
+}
+$('btn-flip').onclick = () => {
+  if (!selection.size) { status('Sélectionne un calque.'); return; }
+  if (selection.size === 1) [...selection][0].box.scale.x *= -1;
+  else { const c = selCenterWorld(); for (const l of selection) { l.box.x = 2 * c.x - l.box.x; l.box.scale.x *= -1; l.box.rotation = -l.box.rotation; } }
+  commit();
+};
+function moveNodes(dir: 1 | -1) {
+  const nodes = selectedNodes(); if (!nodes.length) { status('Sélectionne un calque.'); return; }
+  const byParent = new Map<Group, Node[]>();
+  nodes.forEach(n => byParent.set(n.parent!, [...(byParent.get(n.parent!) ?? []), n]));
+  for (const [p, ns] of byParent) {
+    const ch = p.children, idxs = ns.map(n => ch.indexOf(n)).sort((x, y) => (dir > 0 ? y - x : x - y));
+    for (const i of idxs) { const j = i + dir; if (j < 0 || j >= ch.length || ns.includes(ch[j])) continue; [ch[i], ch[j]] = [ch[j], ch[i]]; }
+  }
+  reflow(); commit();
+}
+$('btn-up').onclick = () => moveNodes(1);
+$('btn-down').onclick = () => moveNodes(-1);
+
+function groupSelection() {
+  const nodes = selectedNodes(); if (!nodes.length) { status('Sélectionne des éléments à grouper.'); return; }
+  if (nodes.length === 1 && isGroup(nodes[0])) { status('Déjà un groupe : sélectionne plusieurs éléments.'); return; }
+  const A = lca(nodes);
+  const tops = [...new Set(nodes.map(n => childOf(A, n)))].sort((x, y) => A.children.indexOf(x) - A.children.indexOf(y));
+  const at = A.children.indexOf(tops[tops.length - 1]) - (tops.length - 1);
+  const g: Group = { id: groupSeq, name: 'Groupe ' + groupSeq, collapsed: false, children: [], parent: A };
+  groupSeq++;
+  tops.forEach(detach); attach(g, A, at); tops.forEach(n => attach(n, g));
+  reflow(); setSelection(leavesOf(g) as Layer[]); commit(); status(`« ${g.name} » créé.`);
+}
+function ungroupSelection() {
+  const gs = new Set<Group>();
+  for (const n of selectedNodes()) if (isGroup(n)) gs.add(n);
+  if (!gs.size && selected && selected.parent !== root) gs.add(selected.parent);
+  if (!gs.size) { status('Aucun groupe sélectionné.'); return; }
+  for (const g of gs) { const p = g.parent!, i = p.children.indexOf(g), kids = [...g.children]; detach(g); kids.forEach((c, k) => attach(c, p, i + k)); g.children = []; }
+  reflow(); commit(); status('Groupe dissocié.');
+}
+$('btn-group').onclick = groupSelection;
+$('btn-ungroup').onclick = ungroupSelection;
+
+const eachSel = (f: (l: Layer) => void) => { selection.forEach(f); commitSoon(); };
+$<HTMLInputElement>('border').oninput = e => { const v = +(e.target as HTMLInputElement).value; eachSel(l => { l.border = v; refresh(l); }); };
+$<HTMLInputElement>('rough').oninput = e => { const v = +(e.target as HTMLInputElement).value; eachSel(l => { l.rough = v; refresh(l); }); };
+$<HTMLInputElement>('shadow').oninput = e => { const v = +(e.target as HTMLInputElement).value; eachSel(l => { l.shadow = v; refresh(l); }); };
 $<HTMLInputElement>('bg').oninput = e => { bgColor = (e.target as HTMLInputElement).value; drawPaper(); commitSoon(); };
 
 const textPop = $('textpop');
@@ -458,9 +544,13 @@ function download(blob: Blob | null, name: string) {
 $('btn-export').onclick = () => extractPaper().toBlob(b => download(b, 'collage.png'));
 $('btn-export-layers').onclick = async () => {
   const name = (l: Layer, z: number) => `${String(z).padStart(2, '0')}_${l.name.replace(/\W+/g, '_')}.png`;
+  const groupPath = (l: Layer) => { const names: string[] = []; for (let g: Group | null = l.parent; g && g !== root; g = g.parent) names.unshift(g.name); return names.join('/'); };
+  const hier = (g: Group): unknown[] => g.children.map(c => (isGroup(c) ? { group: c.name, children: hier(c) } : { layer: name(c as Layer, layers.indexOf(c as Layer)).replace('.png', '') }));
   const manifest = {
     canvas: [PW, PH],
+    hierarchy: hier(root),
     layers: layers.map((l, z) => ({
+      group: groupPath(l),
       name: name(l, z).replace('.png', ''), file: 'layers/' + name(l, z), w: l.baked.width, h: l.baked.height,
       x: Math.round(l.box.x), y: Math.round(l.box.y), rotation: +(l.box.rotation * 180 / Math.PI).toFixed(2),
       scale: [+l.box.scale.x.toFixed(3), +l.box.scale.y.toFixed(3)], z,
@@ -483,7 +573,7 @@ async function saveProject() {
     if (!id) { id = 'img' + ids.size; ids.set(l.base, id); images[id] = l.base.toDataURL('image/png'); }
     return { id: l.id, name: l.name, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
   });
-  const blob = new Blob([JSON.stringify({ format: 'maxernzt', version: 1, paper: [PW, PH], bg: bgColor, layers: out, images })], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, tree: serialize(root), layers: out, images })], { type: 'application/json' });
   try {
     const w = window as any;
     if (w.showSaveFilePicker) {
@@ -505,7 +595,7 @@ async function loadProject(f: File) {
     for (const [id, url] of Object.entries<string>(d.images)) imgs.set(id, await decode(url));
     const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
-    restore({ layers: ls, bg: d.bg ?? bgColor, sel: null });
+    restore({ layers: ls, bg: d.bg ?? bgColor, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); commit(); dirty = false;
     status(`Projet « ${projectName} » ouvert (${ls.length} calques).`);
   } catch (e) { status('Ouverture impossible : ' + (e as Error).message); }
@@ -515,30 +605,68 @@ $('btn-open').onclick = () => $<HTMLInputElement>('file-proj').click();
 $<HTMLInputElement>('file-proj').onchange = e => { const i = e.target as HTMLInputElement; if (i.files![0]) loadProject(i.files![0]); i.value = ''; };
 $('btn-new').onclick = () => {
   if (layers.length && dirty && !confirm('Vider la feuille ? (tu pourras annuler avec Ctrl+Z)')) return;
-  restore({ layers: [], bg: bgColor, sel: null }); projectName = 'collage'; commit(); status('Nouvelle feuille.');
+  restore({ layers: [], bg: bgColor, tree: [], sel: [] }); projectName = 'collage'; commit(); status('Nouvelle feuille.');
 };
 addEventListener('beforeunload', e => { if (dirty && layers.length) e.preventDefault(); });
 
 // ---- souris
-// poignées : coins = taille (proportionnelle), rond au-dessus = rotation (Maj = pas de 15°)
+// poignées : coins = taille (proportionnelle), rond au-dessus = rotation (Maj = pas de 15°) ; pour un calque comme pour une sélection
 type HandleKind = 'nw' | 'ne' | 'se' | 'sw' | 'rot';
-interface Xf { kind: HandleKind; l: Layer; cx: number; cy: number; d0: number; sx: number; sy: number; a0: number; r0: number }
+interface Item { l: Layer; x: number; y: number; r: number; sx: number; sy: number }
+interface Xf { kind: HandleKind; items: Item[]; cx: number; cy: number; d0: number; a0: number }
 const frameOf = (l: Layer) => { const b = l.border * 1.3; return { x0: PAD - b, y0: PAD - b, x1: PAD + l.base.width + b, y1: PAD + l.base.height + b }; };
+const frameCorners = (l: Layer): Pt[] => { const f = frameOf(l); return [{ x: f.x0, y: f.y0 }, { x: f.x1, y: f.y0 }, { x: f.x1, y: f.y1 }, { x: f.x0, y: f.y1 }].map(c => l.box.toGlobal(c)); };
 function handlePts(l: Layer): Record<HandleKind, Pt> {
   const f = frameOf(l), g = (x: number, y: number) => l.box.toGlobal({ x, y }), mx = (f.x0 + f.x1) / 2;
   const top = g(mx, f.y0), c = g(mx, (f.y0 + f.y1) / 2), dx = top.x - c.x, dy = top.y - c.y, d = Math.hypot(dx, dy) || 1;
   return { nw: g(f.x0, f.y0), ne: g(f.x1, f.y0), se: g(f.x1, f.y1), sw: g(f.x0, f.y1), rot: { x: top.x + (dx / d) * 30, y: top.y + (dy / d) * 30 } };
 }
-function hitHandle(l: Layer, p: Pt): HandleKind | null {
-  const h = handlePts(l);
+/** Boîte englobante de la sélection, en coordonnées écran. */
+function selBounds() {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const l of selection) for (const c of frameCorners(l)) { x0 = Math.min(x0, c.x); y0 = Math.min(y0, c.y); x1 = Math.max(x1, c.x); y1 = Math.max(y1, c.y); }
+  return { x0, y0, x1, y1 };
+}
+function selHandles(): Record<HandleKind, Pt> | null {
+  if (!selection.size) return null;
+  if (selection.size === 1) return handlePts([...selection][0]);
+  const b = selBounds();
+  return { nw: { x: b.x0, y: b.y0 }, ne: { x: b.x1, y: b.y0 }, se: { x: b.x1, y: b.y1 }, sw: { x: b.x0, y: b.y1 }, rot: { x: (b.x0 + b.x1) / 2, y: b.y0 - 30 } };
+}
+function hitHandle(p: Pt): HandleKind | null {
+  const h = selHandles(); if (!h) return null;
   for (const k of ['rot', 'nw', 'ne', 'se', 'sw'] as HandleKind[]) if (Math.hypot(h[k].x - p.x, h[k].y - p.y) <= 10) return k;
   return null;
 }
 const HANDLE_CURSOR: Record<HandleKind, string> = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', rot: 'grab' };
+const mkItems = (): Item[] => [...selection].map(l => ({ l, x: l.box.x, y: l.box.y, r: l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y }));
+/** Taille et rotation relatives autour du centre de la sélection (molette). */
+function applyDelta(k: number, dth: number) {
+  const c = selCenterWorld(), cos = Math.cos(dth), sin = Math.sin(dth);
+  for (const l of selection) {
+    const rx = l.box.x - c.x, ry = l.box.y - c.y;
+    l.box.position.set(c.x + (rx * cos - ry * sin) * k, c.y + (rx * sin + ry * cos) * k);
+    l.box.scale.set(l.box.scale.x * k, l.box.scale.y * k); l.box.rotation += dth;
+  }
+}
 let xf: Xf | null = null;
-let drag: { l: Layer; dx: number; dy: number } | null = null, pan: { sx: number; sy: number; vx: number; vy: number } | null = null, path: Pt[] | null = null;
+let drag: { items: Item[]; sx: number; sy: number; moved: boolean; collapse: Layer[] | null; hit: Layer } | null = null;
+let marq: { x0: number; y0: number; x1: number; y1: number; add: boolean } | null = null;
+let pan: { sx: number; sy: number; vx: number; vy: number } | null = null, path: Pt[] | null = null;
 const cv = app.canvas;
 const pos = (e: MouseEvent): Pt => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+
+function finishMarquee(m: NonNullable<typeof marq>) {
+  const x0 = Math.min(m.x0, m.x1), x1 = Math.max(m.x0, m.x1), y0 = Math.min(m.y0, m.y1), y1 = Math.max(m.y0, m.y1);
+  if (x1 - x0 < 3 && y1 - y0 < 3) return;
+  const found = new Set<Layer>();
+  for (const l of layers) {
+    const cs = frameCorners(l), ax0 = Math.min(...cs.map(c => c.x)), ax1 = Math.max(...cs.map(c => c.x)), ay0 = Math.min(...cs.map(c => c.y)), ay1 = Math.max(...cs.map(c => c.y));
+    if (ax1 >= x0 && ax0 <= x1 && ay1 >= y0 && ay0 <= y1) for (const q of leavesOf(topNode(l, root))) found.add(q as Layer);
+  }
+  setSelection([...(m.add ? new Set([...selection, ...found]) : found)]);
+}
+
 cv.addEventListener('pointerdown', e => {
   const p = pos(e); cv.setPointerCapture(e.pointerId); closeTextPop();
   if (e.button === 1 || e.button === 2) { pan = { sx: p.x, sy: p.y, vx: view.x, vy: view.y }; return; }
@@ -549,66 +677,94 @@ cv.addEventListener('pointerdown', e => {
   }
   if (tool !== 'move') { if (!selected) return status('Sélectionne d\'abord une image.'); path = [p]; return; }
   const w = toWorld(p.x, p.y);
-  if (selected) {
-    const kind = hitHandle(selected, p);
-    if (kind) {
-      const l = selected, cx = l.box.x, cy = l.box.y;
-      xf = { kind, l, cx, cy, d0: Math.hypot(w.x - cx, w.y - cy) || 1, sx: l.box.scale.x, sy: l.box.scale.y, a0: Math.atan2(w.y - cy, w.x - cx), r0: l.box.rotation };
+  const kind = hitHandle(p);
+  if (kind) {
+    const c = selCenterWorld();
+    xf = { kind, items: mkItems(), cx: c.x, cy: c.y, d0: Math.hypot(w.x - c.x, w.y - c.y) || 1, a0: Math.atan2(w.y - c.y, w.x - c.x) };
+    return;
+  }
+  let hl: Layer | null = null;
+  for (let i = layers.length - 1; i >= 0; i--) if (hit(layers[i], w)) { hl = layers[i]; break; }
+  if (hl) {
+    // clic = tout le groupe de plus haut niveau ; Ctrl+clic = le calque seul ; Maj+clic = ajouter / retirer
+    const deep = e.ctrlKey || e.metaKey, node: Node = deep ? hl : topNode(hl, root), ls = leavesOf(node) as Layer[];
+    if (e.shiftKey) {
+      const all = ls.every(x => selection.has(x));
+      ls.forEach(x => (all ? selection.delete(x) : selection.add(x)));
+      setSelection([...selection], all ? undefined : hl);
       return;
     }
+    let collapse: Layer[] | null = null;
+    if (!selection.has(hl) || deep) setSelection(ls, hl); else if (selection.size > ls.length) collapse = ls;
+    if (!collapse) toTop(node);
+    drag = { items: mkItems(), sx: w.x, sy: w.y, moved: false, collapse, hit: hl };
+    return;
   }
-  for (let i = layers.length - 1; i >= 0; i--) {
-    if (hit(layers[i], w)) { const l = layers[i]; select(l); toTop(l); drag = { l, dx: l.box.x - w.x, dy: l.box.y - w.y }; return; }
-  }
-  select(null);
+  if (!e.shiftKey) setSelection([]);
+  marq = { x0: p.x, y0: p.y, x1: p.x, y1: p.y, add: e.shiftKey };
 });
 cv.addEventListener('pointermove', e => {
   const p = pos(e);
   if (xf) {
-    const w = toWorld(p.x, p.y);
+    const w = toWorld(p.x, p.y), single = xf.items.length === 1;
     if (xf.kind === 'rot') {
-      let r = xf.r0 + (Math.atan2(w.y - xf.cy, w.x - xf.cx) - xf.a0);
-      if (e.shiftKey) r = Math.round(r / (Math.PI / 12)) * (Math.PI / 12);
-      xf.l.box.rotation = r;
+      let dth = Math.atan2(w.y - xf.cy, w.x - xf.cx) - xf.a0;
+      if (e.shiftKey) { const step = Math.PI / 12; dth = single ? Math.round((xf.items[0].r + dth) / step) * step - xf.items[0].r : Math.round(dth / step) * step; }
+      const cos = Math.cos(dth), sin = Math.sin(dth);
+      for (const it of xf.items) { const rx = it.x - xf.cx, ry = it.y - xf.cy; it.l.box.position.set(xf.cx + rx * cos - ry * sin, xf.cy + rx * sin + ry * cos); it.l.box.rotation = it.r + dth; }
     } else {
       const k = Math.max(0.02, Math.hypot(w.x - xf.cx, w.y - xf.cy) / xf.d0);
-      xf.l.box.scale.set(xf.sx * k, xf.sy * k);
+      for (const it of xf.items) { it.l.box.position.set(xf.cx + (it.x - xf.cx) * k, xf.cy + (it.y - xf.cy) * k); it.l.box.scale.set(it.sx * k, it.sy * k); }
     }
     return;
   }
-  if (!pan && !drag && !path && tool === 'move') { const k = selected ? hitHandle(selected, p) : null; cv.style.cursor = k ? HANDLE_CURSOR[k] : 'default'; }
+  if (!pan && !drag && !path && !marq && tool === 'move') { const k = hitHandle(p); cv.style.cursor = k ? HANDLE_CURSOR[k] : 'default'; }
   if (pan) { view.x = pan.vx + p.x - pan.sx; view.y = pan.vy + p.y - pan.sy; applyView(); }
-  else if (drag) { const w = toWorld(p.x, p.y); drag.l.box.position.set(w.x + drag.dx, w.y + drag.dy); }
-  else if (path) { path.push(p); { const f = path.flatMap(q => [q.x, q.y]); pathG.clear().poly(f, false).stroke({ width: 5, color: 0x000000, alpha: 0.55 }).poly(f, false).stroke({ width: 2.2, color: 0xffffff }); } }
+  else if (drag) {
+    const w = toWorld(p.x, p.y), dx = w.x - drag.sx, dy = w.y - drag.sy;
+    if (!drag.moved && Math.hypot(dx, dy) * view.s < 3) return;
+    drag.moved = true; for (const it of drag.items) it.l.box.position.set(it.x + dx, it.y + dy);
+  } else if (marq) {
+    marq.x1 = p.x; marq.y1 = p.y;
+    pathG.clear().rect(Math.min(marq.x0, p.x), Math.min(marq.y0, p.y), Math.abs(p.x - marq.x0), Math.abs(p.y - marq.y0)).fill({ color: 0xf2b134, alpha: 0.12 }).stroke({ width: 1, color: 0xf2b134 });
+  } else if (path) { path.push(p); { const f = path.flatMap(q => [q.x, q.y]); pathG.clear().poly(f, false).stroke({ width: 5, color: 0x000000, alpha: 0.55 }).poly(f, false).stroke({ width: 2.2, color: 0xffffff }); } }
 });
-const end = () => { if (drag || xf) commit(); xf = null; if (path) { const pp = path; path = null; pathG.clear(); finishPath(pp); } drag = null; pan = null; };
+const end = () => {
+  if (xf) { commit(); xf = null; }
+  if (drag) { if (!drag.moved && drag.collapse) setSelection(drag.collapse, drag.hit); commit(); drag = null; }
+  if (marq) { const m = marq; marq = null; pathG.clear(); finishMarquee(m); }
+  if (path) { const pp = path; path = null; pathG.clear(); finishPath(pp); }
+  pan = null;
+};
 cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('dblclick', e => {
   if (tool !== 'move') return;
   const w = toWorld(pos(e).x, pos(e).y);
-  for (let i = layers.length - 1; i >= 0; i--) if (hit(layers[i], w)) { const l = layers[i]; select(l); if (l.letter) openLetterEdit(l); return; }
+  for (let i = layers.length - 1; i >= 0; i--) if (hit(layers[i], w)) { const l = layers[i]; setSelection([l], l); if (l.letter) openLetterEdit(l); return; }
 });
 cv.addEventListener('wheel', e => {
   e.preventDefault();
   const k = e.deltaY > 0 ? 0.92 : 1 / 0.92;
-  if (e.altKey && selected) selected.box.scale.set(selected.box.scale.x * k, selected.box.scale.y * k);
-  else if (e.shiftKey && selected) selected.box.rotation += (e.deltaY > 0 ? 1 : -1) * 0.07;
+  if (selection.size && e.altKey) applyDelta(k, 0);
+  else if (selection.size && e.shiftKey) applyDelta(1, (e.deltaY > 0 ? 1 : -1) * 0.07);
   else { const p = pos(e), w = toWorld(p.x, p.y); view.s = Math.min(8, Math.max(0.1, view.s * k)); view.x = p.x - w.x * view.s; view.y = p.y - w.y * view.s; applyView(); }
   commitSoon();
 }, { passive: false });
 addEventListener('keydown', e => {
-  const t = e.target as HTMLInputElement;
+  const t = e.target as HTMLInputElement, typing = t.tagName === 'INPUT' && t.type === 'text';
   if (e.ctrlKey || e.metaKey) {
     const k = e.key.toLowerCase();
     if (k === 's') { e.preventDefault(); saveProject(); return; }
-    if (k === 'd' && selected) { e.preventDefault(); $('btn-dup').click(); return; }
+    if (k === 'd' && selection.size) { e.preventDefault(); $('btn-dup').click(); return; }
     if (k === 'o') { e.preventDefault(); $<HTMLInputElement>('file-proj').click(); return; }
-    if (t.tagName === 'INPUT' && t.type === 'text') return;
+    if (typing) return;
+    if (k === 'g') { e.preventDefault(); (e.shiftKey ? ungroupSelection : groupSelection)(); return; }
+    if (k === 'a') { e.preventDefault(); setSelection([...layers]); return; }
     if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); } else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
     return;
   }
-  if (t.tagName === 'INPUT' && t.type === 'text') return;
+  if (typing) return;
   const key = e.key.toLowerCase(), click = (id: string) => $(id).click();
   if (key === 'v') { click('btn-select'); return; }
   if (key === 'a') { click('btn-ai'); return; }
@@ -620,16 +776,18 @@ addEventListener('keydown', e => {
   if (key === '0') { fitView(); return; }
   if (key === ']') { click('btn-up'); return; }
   if (key === '[') { click('btn-down'); return; }
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selected) { removeLayer(selected); commit(); }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selection.size) click('btn-del');
   if (e.key === 'Enter') samValidate();
-  if (e.key === 'Escape') { samClear(); path = null; pathG.clear(); if (tool !== 'move') setTool(tool); }
+  if (e.key === 'Escape') { samClear(); path = null; marq = null; pathG.clear(); if (tool !== 'move') setTool(tool); }
 });
 
 // ---- surcouche de sélection
 app.ticker.add(() => {
   selG.clear();
-  if (selected) {
-    const h = handlePts(selected), q = [h.nw, h.ne, h.se, h.sw].flatMap(c => [c.x, c.y]);
+  if (selection.size > 1) for (const l of selection) { const q = frameCorners(l).flatMap(c => [c.x, c.y]); selG.poly(q).stroke({ width: 1, color: 0xffffff, alpha: 0.7 }); }
+  const h = selHandles();
+  if (h) {
+    const q = [h.nw, h.ne, h.se, h.sw].flatMap(c => [c.x, c.y]);
     selG.poly(q).stroke({ width: 4, color: 0x000000, alpha: 0.5 }).poly(q).stroke({ width: 1.5, color: 0xffffff });
     if (tool === 'move') {
       const top = { x: (h.nw.x + h.ne.x) / 2, y: (h.nw.y + h.ne.y) / 2 };
@@ -651,34 +809,81 @@ function thumbOf(c: HTMLCanvasElement) {
   if (!u) { const k = Math.min(1, 68 / c.width, 68 / c.height), t = makeCanvas(c.width * k, c.height * k); t.getContext('2d')!.drawImage(c, 0, 0, t.width, t.height); thumbs.set(c, u = t.toDataURL()); }
   return u;
 }
-function reorder(from: number, to: number) {
-  if (from === to || from < 0 || from >= layers.length) return;
-  const [l] = layers.splice(from, 1); layers.splice(to, 0, l);
-  layers.forEach((x, k) => world.setChildIndex(x.box, k + 1)); commit();
+let dragNode: Node | null = null;
+function dropOn(target: Node | null) {
+  const dn = dragNode; dragNode = null; if (!dn) return;
+  const inSel = isGroup(dn) ? fullySel(dn) : selection.has(dn as Layer);
+  const moving: Node[] = inSel && selection.size ? selectedNodes() : [dn];
+  let parent: Group, ref: Node | null = null;
+  if (!target) parent = root; else if (isGroup(target)) parent = target; else { parent = target.parent!; ref = target; }
+  if (moving.some(n => isGroup(n) && contains(n, parent))) { status('Un groupe ne peut pas entrer dans lui-même.'); return; }
+  if (ref && moving.includes(ref)) return;
+  const olds = new Set(moving.map(n => n.parent!));
+  moving.forEach(detach);
+  let idx = ref ? parent.children.indexOf(ref) + 1 : parent.children.length;
+  moving.forEach(n => attach(n, parent, idx++));
+  olds.forEach(g => prune(g));
+  parent.collapsed = false;
+  reflow(); commit();
+}
+function rename(n: Layer | Group) {
+  const v = prompt('Nom', n.name);
+  if (v && v.trim()) { n.name = v.trim(); commit(); }
+}
+function pick(e: MouseEvent, ls: Layer[], primary: Layer) {
+  if (e.shiftKey || e.ctrlKey || e.metaKey) {
+    const all = ls.every(x => selection.has(x));
+    ls.forEach(x => (all ? selection.delete(x) : selection.add(x)));
+    setSelection([...selection], all ? undefined : primary);
+  } else setSelection(ls, primary);
+}
+function rowBase(n: Node, depth: number, sel: boolean): HTMLLIElement {
+  const li = document.createElement('li');
+  li.className = 'ly' + (sel ? ' sel' : ''); li.draggable = true; li.tabIndex = 0; li.style.paddingLeft = 6 + depth * 16 + 'px';
+  li.ondragstart = e => { dragNode = n; e.dataTransfer!.setData('text/plain', 'node'); e.dataTransfer!.effectAllowed = 'move'; li.classList.add('dragging'); };
+  li.ondragend = () => { li.classList.remove('dragging'); dragNode = null; };
+  li.ondragover = e => { if (dragNode) { e.preventDefault(); li.classList.add('over'); } };
+  li.ondragleave = () => li.classList.remove('over');
+  li.ondrop = e => { e.preventDefault(); e.stopPropagation(); li.classList.remove('over'); dropOn(n); };
+  return li;
 }
 function renderLayers() {
   const list = $('layer-list'); list.innerHTML = '';
-  for (let i = layers.length - 1; i >= 0; i--) {
-    const l = layers[i], li = document.createElement('li');
-    li.className = 'ly' + (l === selected ? ' sel' : ''); li.draggable = true; li.tabIndex = 0; li.title = l.name;
-    li.innerHTML = '<span class="th"><img alt=""></span><span class="nm"></span>';
-    (li.querySelector('img') as HTMLImageElement).src = thumbOf(l.base); (li.querySelector('.nm') as HTMLElement).textContent = l.name;
-    li.onclick = () => select(l);
-    li.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(l); } };
-    li.ondragstart = e => { e.dataTransfer!.setData('text/plain', String(i)); e.dataTransfer!.effectAllowed = 'move'; li.classList.add('dragging'); };
-    li.ondragend = () => li.classList.remove('dragging');
-    li.ondragover = e => { e.preventDefault(); li.classList.add('over'); };
-    li.ondragleave = () => li.classList.remove('over');
-    li.ondrop = e => { e.preventDefault(); e.stopPropagation(); li.classList.remove('over'); reorder(+e.dataTransfer!.getData('text/plain'), i); };
-    list.appendChild(li);
-  }
+  const walk = (g: Group, depth: number) => {
+    for (let i = g.children.length - 1; i >= 0; i--) {
+      const n = g.children[i];
+      if (isGroup(n)) {
+        const ls = leavesOf(n) as Layer[], li = rowBase(n, depth, fullySel(n));
+        li.classList.add('grp'); li.title = n.name;
+        li.innerHTML = `<button class="chev${n.collapsed ? '' : ' open'}" tabindex="-1"><svg class="ic"><use href="#i-chev"/></svg></button><svg class="ic fold"><use href="#i-folder"/></svg><span class="nm"></span><span class="cnt">${ls.length}</span>`;
+        (li.querySelector('.nm') as HTMLElement).textContent = n.name;
+        (li.querySelector('.chev') as HTMLElement).onclick = e => { e.stopPropagation(); n.collapsed = !n.collapsed; };
+        li.onclick = e => pick(e, ls, ls[ls.length - 1]);
+        li.ondblclick = () => rename(n);
+        list.appendChild(li);
+        if (!n.collapsed) walk(n, depth + 1);
+      } else {
+        const l = n as Layer, li = rowBase(l, depth, selection.has(l));
+        li.title = l.name; li.innerHTML = '<span class="th"><img alt=""></span><span class="nm"></span>';
+        (li.querySelector('img') as HTMLImageElement).src = thumbOf(l.base); (li.querySelector('.nm') as HTMLElement).textContent = l.name;
+        li.onclick = e => pick(e, [l], l);
+        li.ondblclick = () => rename(l);
+        li.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelection([l], l); } };
+        list.appendChild(li);
+      }
+    }
+  };
+  walk(root, 0);
   $('lcount').textContent = String(layers.length);
 }
+$('layer-list').ondragover = e => { if (dragNode) e.preventDefault(); };
+$('layer-list').ondrop = e => { e.preventDefault(); dropOn(null); };
+const treeSig = (g: Group): string => g.children.map(c => (isGroup(c) ? `[${c.id}:${c.name}:${c.collapsed ? 1 : 0}:${fullySel(c) ? 1 : 0}${treeSig(c)}]` : `${c.id}:${(c as Layer).name}:${bid((c as Layer).base)}${selection.has(c as Layer) ? '*' : ''}`)).join(',');
 function syncPanels() {
-  const sig = layers.map(l => l.id + ':' + l.name + ':' + bid(l.base) + (l === selected ? '*' : '')).join(',');
+  const sig = treeSig(root);
   if (sig !== layersSig) { layersSig = sig; renderLayers(); }
   $('empty').classList.toggle('gone', layers.length > 0);
-  $('opts').classList.toggle('nosel', !selected);
+  $('opts').classList.toggle('nosel', !selection.size);
   for (const [id, out] of [['border', 'v-border'], ['rough', 'v-rough'], ['shadow', 'v-shadow'], ['tol', 'v-tol']]) {
     const r = $<HTMLInputElement>(id), v = +r.value, mn = +r.min, mx = +r.max;
     r.style.setProperty('--p', ((v - mn) / (mx - mn)) * 100 + '%'); $(out).textContent = String(v);

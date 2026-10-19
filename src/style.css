@@ -143,3 +143,14 @@ body.drop #stage::after { content: ""; position: absolute; inset: 12px; border: 
 @media (max-width: 760px) { body { grid-template-columns: 48px 1fr 150px; } input[type=range] { width: 64px; } }
 #textpop.editing { box-shadow: 0 0 0 2px var(--accent), 0 10px 30px rgba(0,0,0,.55); }
 #textpop.editing .seg { opacity: .3; pointer-events: none; }
+
+/* groupes dans le panneau des calques */
+.ly.grp .nm { color: var(--text); font-weight: 600; }
+.ly .fold { width: 18px; height: 18px; color: var(--accent); flex: none; }
+.ly .cnt { margin-left: auto; font-size: 11px; color: var(--dim); }
+.chev { display: grid; place-items: center; width: 18px; height: 22px; margin-left: -4px; flex: none; color: var(--dim); border-radius: 4px; }
+.chev:hover { background: rgba(255,255,255,.08); color: var(--text); }
+.chev .ic { width: 14px; height: 14px; transition: transform .12s; }
+.chev.open .ic { transform: rotate(90deg); }
+.ly.grp { height: 38px; }
+@media (prefers-reduced-motion: reduce) { .chev .ic { transition: none; } }

@@ -27,6 +27,7 @@ Outil « Détourer au clic » : clic sur l'objet → aperçu ; Maj+clic ajoute u
 - Contour blanc organique (épaisseur inégale, bord arraché, fibres ; curseur d'irrégularité), ombre réglable par calque, miroir, duplication, ordre
 - Lettres découpées : mot sur un même papier ou une lettre par papier, choix de la police (ou mélange), des couleurs (préréglages, mélange ou personnalisées), bords coupés → déchirés, état neuf → crade, aperçu en direct et tirage (dé)
 - Double-clic sur une lettre : le panneau s'ouvre avec son style et la modifie en direct (police, couleurs, bords, état, tirage, texte) ; le style est mémorisé dans le projet
+- Groupes et sous-groupes (Ctrl+G / Ctrl+Maj+G) : sélection multiple (Maj+clic, cadre de sélection, Ctrl+A), déplacement/taille/rotation/miroir/duplication/ordre appliqués à tout le groupe, arbre repliable dans le panneau de calques (glisser-déposer pour ranger, double-clic pour renommer), hiérarchie conservée dans le projet et dans le manifeste d'export. Clic = tout le groupe, Ctrl+clic = un seul calque
 - Poignées sur le canvas pour tous les éléments : coins = taille proportionnelle, rond = rotation (Maj = pas de 15°)
 - Projet : enregistrer (Ctrl+S) / ouvrir (Ctrl+O, ou glisser un fichier `.maxernzt`) / nouveau ; avertissement si modifications non enregistrées
 - Annuler / rétablir (Ctrl+Z, Ctrl+Y ; 60 étapes) pour toutes les actions
@@ -36,7 +37,7 @@ Outil « Détourer au clic » : clic sur l'objet → aperçu ; Maj+clic ajoute u
 
 Boîte à outils à gauche (pictos, info-bulle = nom + raccourci), barre projet/historique/export en haut, barre d'options du calque dessous (contour, ombre, miroir, dupliquer, ordre, supprimer, tolérance, couleur de feuille, zoom), panneau de calques à droite (clic = sélectionner, glisser = réordonner), plan de travail en tapis de coupe.
 
-Raccourcis : V déplacer · A détourage auto · C détourage au clic · B fond uni · X ciseaux · R déchirer · T lettres · [ ] ordre · 0 tout voir · Ctrl+D dupliquer · Ctrl+Z/Y · Ctrl+S/O · Suppr.
+Raccourcis : Ctrl+G grouper · Ctrl+Maj+G dissocier · Ctrl+A tout sélectionner · V déplacer · A détourage auto · C détourage au clic · B fond uni · X ciseaux · R déchirer · T lettres · [ ] ordre · 0 tout voir · Ctrl+D dupliquer · Ctrl+Z/Y · Ctrl+S/O · Suppr.
 
 ## Commandes souris
 
