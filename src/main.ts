@@ -12,7 +12,7 @@ type Pt = { x: number; y: number };
 /** Image clé : l'élément s'arrête au point `u` (0-1) du trajet pendant `hold` s, tourne de `spin` degrés et, en option, se chiffonne en boule. */
 interface Key { u: number; hold: number; spin: number; ball: boolean }
 interface Anim { pts: Pt[]; dur: number; mode: 'loop' | 'pingpong'; ease: 'linear' | 'smooth'; follow: boolean; keys?: Key[] }
-interface BallFx { spr: Sprite; sh: Sprite; k: number; sz: number }
+interface BallFx { spr: Sprite; sh: Sprite; fold: Sprite; frames: Texture[]; k: number; sz: number }
 interface Layer extends Leaf {
   anim?: Anim; ball?: BallFx; name: string; visible: boolean; base: HTMLCanvasElement; baked: HTMLCanvasElement;
   border: number; shadow: number; rough: number; letter?: LetterSpec;
@@ -88,7 +88,7 @@ function refresh(l: Layer) {
   const cx = l.baked.width / 2, cy = l.baked.height / 2;
   l.box.pivot.set(cx, cy);
   l.sprite.pivot.set(cx, cy); l.sprite.position.set(cx, cy); l.shade.pivot.set(cx, cy);
-  if (l.ball) { l.ball.spr.destroy({ texture: true }); l.ball.sh.destroy(); l.ball = undefined; }
+  if (l.ball) { l.ball.frames.forEach(t => t.destroy(true)); l.ball.fold.destroy(); l.ball.spr.destroy({ texture: true }); l.ball.sh.destroy(); l.ball = undefined; }
   const a = l.shadow / 100;
   l.shade.alpha = 0.55 * a; l.shade.position.set(cx + 6 * a + 2, cy + 9 * a + 2);
   (l.shade.filters as BlurFilter[])[0].strength = 2 + 6 * a;
@@ -1138,34 +1138,96 @@ function makeBall(base: HTMLCanvasElement, S: number, seed: number): HTMLCanvasE
   ctx.putImageData(img, 0, 0);
   return c;
 }
+/**
+ * Pliage : la feuille (maillage 14×14 en 3D) s'enroule autour d'une sphère tout en se froissant ; chaque triangle garde sa
+ * part de texture (affine) et est éclairé selon sa normale, du fond vers l'avant pour que les replis se recouvrent.
+ * On précalcule une série d'images, lue ensuite au rythme du chiffonnage.
+ */
+function makeFoldFrames(src: HTMLCanvasElement, D: number, seed: number, F = 18): { frames: HTMLCanvasElement[]; sf: number } {
+  const sf = Math.min(1, 360 / Math.max(src.width, src.height)), W = Math.round(src.width * sf), H = Math.round(src.height * sf);
+  const small = makeCanvas(W, H); small.getContext('2d')!.drawImage(src, 0, 0, W, H);
+  const G = 14, Rb = (D * sf) / 2, V = G + 1;
+  const ridge = (x: number, y: number, o: number) => 1 - Math.abs(2 * vn2(x, y, seed + o) - 1);
+  const Ld = (() => { const x = -0.45, y = -0.55, z = 0.7, n = Math.hypot(x, y, z); return [x / n, y / n, z / n]; })();
+  const frames: HTMLCanvasElement[] = [];
+  for (let f = 0; f < F; f++) {
+    const b = f / (F - 1), e = smooth(b), fold = Math.sin(Math.PI * Math.min(1, b * 1.15)) ** 0.8;
+    const P: number[][] = [];
+    for (let j = 0; j < V; j++) for (let i = 0; i < V; i++) {
+      const u = i / G, v = j / G, fx = (u - 0.5) * W, fy = (v - 0.5) * H;
+      const lon = (u - 0.5) * Math.PI * 1.7, lat = (v - 0.5) * Math.PI * 0.85, rb = Rb * (1 + 0.28 * (ridge(u * 3, v * 3, 5) - 0.5));
+      const bx = rb * Math.cos(lat) * Math.sin(lon), by = rb * Math.sin(lat), bz = rb * Math.cos(lat) * Math.cos(lon);
+      P.push([
+        fx * (1 - e) + bx * e + fold * W * 0.09 * (vn2(u * 3.1 + 5, v * 3.1, seed + 1) - 0.5) * 2,
+        fy * (1 - e) + by * e + fold * H * 0.09 * (vn2(u * 3.1, v * 3.1 + 7, seed + 2) - 0.5) * 2,
+        bz * e + fold * Rb * 1.1 * (ridge(u * 2.6 + 3, v * 2.6, 9) - 0.45) + fold * Rb * 0.5 * (ridge(u * 6.2, v * 6.2 + 2, 11) - 0.5),
+      ]);
+    }
+    const tris: { i: number[]; z: number }[] = [];
+    for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) {
+      const a0 = j * V + i, a1 = a0 + 1, a2 = a0 + V, a3 = a2 + 1;
+      for (const t of [[a0, a1, a2], [a1, a3, a2]]) tris.push({ i: t, z: (P[t[0]][2] + P[t[1]][2] + P[t[2]][2]) / 3 });
+    }
+    tris.sort((p, q) => p.z - q.z);                       // du fond vers l'avant
+    const c = makeCanvas(W, H), ctx = c.getContext('2d')!;
+    for (const t of tris) {
+      const [i0, i1, i2] = t.i, p0 = P[i0], p1 = P[i1], p2 = P[i2];
+      const uv = (i: number) => [(i % V) / G * W, Math.floor(i / V) / G * H];
+      const s0 = uv(i0), s1 = uv(i1), s2 = uv(i2), d0 = [p0[0] + W / 2, p0[1] + H / 2], d1 = [p1[0] + W / 2, p1[1] + H / 2], d2 = [p2[0] + W / 2, p2[1] + H / 2];
+      const det = (s1[0] - s0[0]) * (s2[1] - s0[1]) - (s2[0] - s0[0]) * (s1[1] - s0[1]);
+      if (Math.abs(det) < 1e-6) continue;
+      const cx = (d0[0] + d1[0] + d2[0]) / 3, cy = (d0[1] + d1[1] + d2[1]) / 3;
+      ctx.save(); ctx.beginPath();                        // triangle légèrement élargi pour ne pas laisser de jour entre voisins
+      [d0, d1, d2].forEach((q, k) => { const dx = q[0] - cx, dy = q[1] - cy, n = Math.hypot(dx, dy) || 1, x = q[0] + (dx / n) * 0.7, y = q[1] + (dy / n) * 0.7; if (k) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+      ctx.closePath(); ctx.clip();
+      const a = ((d1[0] - d0[0]) * (s2[1] - s0[1]) - (d2[0] - d0[0]) * (s1[1] - s0[1])) / det, cc = ((d2[0] - d0[0]) * (s1[0] - s0[0]) - (d1[0] - d0[0]) * (s2[0] - s0[0])) / det;
+      const bb = ((d1[1] - d0[1]) * (s2[1] - s0[1]) - (d2[1] - d0[1]) * (s1[1] - s0[1])) / det, dd = ((d2[1] - d0[1]) * (s1[0] - s0[0]) - (d1[1] - d0[1]) * (s2[0] - s0[0])) / det;
+      ctx.transform(a, bb, cc, dd, d0[0] - a * s0[0] - cc * s0[1], d0[1] - bb * s0[0] - dd * s0[1]);
+      ctx.drawImage(small, 0, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      // éclairage de la facette
+      let nx = (p1[1] - p0[1]) * (p2[2] - p0[2]) - (p1[2] - p0[2]) * (p2[1] - p0[1]), ny = (p1[2] - p0[2]) * (p2[0] - p0[0]) - (p1[0] - p0[0]) * (p2[2] - p0[2]), nz = (p1[0] - p0[0]) * (p2[1] - p0[1]) - (p1[1] - p0[1]) * (p2[0] - p0[0]);
+      const nl = Math.hypot(nx, ny, nz) || 1; let back = false;
+      if (nz < 0) { nx = -nx; ny = -ny; nz = -nz; back = true; }
+      const diff = Math.max(0, (nx * Ld[0] + ny * Ld[1] + nz * Ld[2]) / nl), sh = (0.5 + 0.72 * diff) * (back ? 0.85 : 1) * (1 - 0.12 * fold * (1 - nz / nl));
+      ctx.globalCompositeOperation = 'source-atop';       // l'éclairage ne teinte que le papier, pas le vide autour
+      ctx.fillStyle = sh < 1 ? `rgba(20,12,0,${(1 - sh) * 0.9})` : `rgba(255,255,255,${Math.min(0.5, (sh - 1) * 0.7)})`;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+    frames.push(c);
+  }
+  return { frames, sf };
+}
 function ensureBall(l: Layer): BallFx {
   if (l.ball) return l.ball;
   const D = Math.max(48, 0.5 * Math.sqrt(opaqueArea(l.base))), S = Math.round(Math.min(D, 480)), cx = l.baked.width / 2, cy = l.baked.height / 2, sd = l.id * 31 + 7;
   const tex = Texture.from(bake(makeBall(l.base, S, sd), l.border, l.rough, sd + 2)), spr = new Sprite(tex), sh = new Sprite(tex);
+  const { frames, sf } = makeFoldFrames(l.baked, D, sd + 3), ftex = frames.map(f => Texture.from(f)), fold = new Sprite(ftex[ftex.length - 1]);
   const a = l.shadow / 100;
-  for (const q of [spr, sh]) q.anchor.set(0.5);
-  spr.position.set(cx, cy); sh.position.set(cx + 6 * a + 2, cy + 9 * a + 2);
+  for (const q of [spr, sh, fold]) q.anchor.set(0.5);
+  spr.position.set(cx, cy); sh.position.set(cx + 6 * a + 2, cy + 9 * a + 2); fold.position.set(cx, cy); fold.scale.set(1 / sf);
   sh.tint = 0; sh.filters = [new BlurFilter({ strength: 2 + 6 * a })];
-  spr.visible = sh.visible = false;
-  l.box.addChild(sh, spr);
-  l.ball = { spr, sh, k: Math.min(1, D / Math.max(l.base.width, l.base.height)), sz: D / S };
+  spr.visible = sh.visible = fold.visible = false;
+  l.box.addChild(sh, fold, spr);
+  l.ball = { spr, sh, fold, frames: ftex, k: Math.min(1, D / Math.max(l.base.width, l.base.height)), sz: D / S };
   return l.ball;
 }
 function setCrumple(l: Layer, b: number) {
   const sa = 0.55 * (l.shadow / 100);
   if (b <= 0.001) {
-    if (l.ball) l.ball.spr.visible = l.ball.sh.visible = false;
+    if (l.ball) l.ball.spr.visible = l.ball.sh.visible = l.ball.fold.visible = false;
     l.sprite.alpha = 1; l.sprite.scale.set(1); l.sprite.rotation = 0; l.shade.scale.set(1); l.shade.rotation = 0; l.shade.alpha = sa;
     return;
   }
-  const fx = ensureBall(l), e = smooth(Math.min(1, b)), fade = smooth(Math.min(1, Math.max(0, (b - 0.3) / 0.5))), appear = smooth(Math.min(1, Math.max(0, (b - 0.2) / 0.5)));
-  const wob = Math.sin(animT * 17) * 0.5 * b * (1 - b);       // le papier se tord en se refermant
+  const fx = ensureBall(l), nF = fx.frames.length, e = smooth(Math.min(1, b));
+  const inFold = b > 0.012, toBall = smooth(Math.min(1, Math.max(0, (b - 0.8) / 0.2)));
+  l.sprite.alpha = inFold ? 0 : 1; l.sprite.scale.set(1);       // la feuille est remplacée par son maillage plié
+  fx.fold.visible = inFold; fx.fold.texture = fx.frames[Math.min(nF - 1, Math.max(0, Math.round(b * (nF - 1))))]; fx.fold.alpha = 1 - toBall;
   const f = 1 + (fx.k - 1) * e;
-  l.sprite.scale.set(f, f * (1 - 0.25 * b * (1 - b))); l.sprite.rotation = wob; l.shade.scale.copyFrom(l.sprite.scale); l.shade.rotation = wob;
-  l.sprite.alpha = 1 - fade; l.shade.alpha = sa * (1 - fade);
-  const bs = 1.35 - 0.35 * e;
-  fx.spr.visible = fx.sh.visible = true; fx.spr.scale.set(bs * fx.sz); fx.sh.scale.set(bs * fx.sz); fx.spr.rotation = fx.sh.rotation = -wob;
-  fx.spr.alpha = appear; fx.sh.alpha = sa * appear;
+  l.shade.scale.set(f); l.shade.alpha = sa * (1 - toBall);      // l'ombre du papier se resserre avec lui
+  fx.spr.visible = fx.sh.visible = toBall > 0.001;               // en fin de pli, on passe à la boule détaillée
+  fx.spr.scale.set(fx.sz); fx.sh.scale.set(fx.sz); fx.spr.alpha = toBall; fx.sh.alpha = sa * toBall;
 }
 
 // ---- lecture : on part de la pose de repos de chaque calque, on y ajoute les décalages de son chemin et de ceux de ses groupes
