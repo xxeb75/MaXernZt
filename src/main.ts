@@ -725,6 +725,11 @@ $('btn-export-layers').onclick = async () => {
 
 // ---- projet : sauvegarde / chargement (.maxernzt = JSON, images en PNG base64, partagées si identiques)
 let projectName = 'collage', dirty = false;
+/** L'enregistrement par sélecteur de fichier est peu fiable dans l'appli Claude (fichier créé mais vide) : on y télécharge directement. */
+function pickerBroken() {
+  if (/Electron|Claude\//.test(navigator.userAgent)) return true;
+  try { return localStorage.getItem('maxernzt.nopicker') === '1'; } catch { return false; }
+}
 async function saveProject() {
   stopPlay();
   const ids = new Map<HTMLCanvasElement, string>(), images: Record<string, string> = {};
@@ -738,7 +743,7 @@ async function saveProject() {
   try {
     const w = window as any;
     let ok = false;
-    if (w.showSaveFilePicker) {
+    if (w.showSaveFilePicker && !pickerBroken()) {
       const h = await w.showSaveFilePicker({ suggestedName: fileName, types: [{ description: 'Projet MaXernZt', accept: { 'application/json': ['.maxernzt'] } }] });
       try {
         const ws = await h.createWritable(); await ws.write(blob); await ws.close();
@@ -747,6 +752,7 @@ async function saveProject() {
         projectName = String(h.name).replace(/\.maxernzt$/i, ''); ok = true;
       } catch (err) {
         console.error('enregistrement direct impossible', err);
+        try { localStorage.setItem('maxernzt.nopicker', '1'); } catch { /* ignoré */ }   // la prochaine fois : directement le téléchargement, une seule fenêtre
         status("Écriture directe impossible (" + (err as Error).message + ") : téléchargement du fichier à la place.");
       }
     }
@@ -755,7 +761,7 @@ async function saveProject() {
     const info = `${ok ? projectName + '.maxernzt' : fileName} — ${layers.length} calques, ${fmtSize(blob.size)}`, hhmm = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
     $('btn-save').dataset.tip = `Enregistrer (Ctrl+S) — dernier : ${hhmm}`;
     if (ok) { status(`Projet enregistré (${info}).`); toast('Projet enregistré', info, 'ok'); }
-    else { status('Projet téléchargé : ' + fileName); toast('Projet téléchargé', `${fileName} est dans ton dossier Téléchargements (${fmtSize(blob.size)})`, 'warn'); }
+    else { status('Téléchargement lancé : ' + fileName); toast('Téléchargement lancé', `${fileName} (${fmtSize(blob.size)}) — valide la fenêtre d'enregistrement si elle s'ouvre, sinon il est dans Téléchargements.`, 'warn'); }
   } catch (e) {
     if ((e as Error).name === 'AbortError') return;
     console.error(e); status("Erreur d'enregistrement : " + (e as Error).message);
