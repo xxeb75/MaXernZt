@@ -25,7 +25,8 @@ Outil « Détourer au clic » : clic sur l'objet → aperçu ; Maj+clic ajoute u
 - Import (bouton, glisser-déposer, Ctrl+V), détourage IA ou fond uni
 - Ciseaux (tracé libre, bord irrégulier) et déchirure (ligne, bord fibreux, morceaux séparés)
 - Bord blanc et ombre réglables par calque, miroir, duplication, ordre
-- Lettres découpées : saisir un mot → une lettre = un calque, police/papier aléatoires
+- Lettres découpées : mot sur un même papier ou une lettre par papier, choix de la police (ou mélange), des couleurs (préréglages, mélange ou personnalisées), bords coupés → déchirés, état neuf → crade, aperçu en direct et tirage (dé)
+- Poignées sur le canvas pour tous les éléments : coins = taille proportionnelle, rond = rotation (Maj = pas de 15°)
 - Projet : enregistrer (Ctrl+S) / ouvrir (Ctrl+O, ou glisser un fichier `.maxernzt`) / nouveau ; avertissement si modifications non enregistrées
 - Annuler / rétablir (Ctrl+Z, Ctrl+Y ; 60 étapes) pour toutes les actions
 - Export PNG de la feuille, export des calques (PNG + `manifest.json` compatible Godot/animation)

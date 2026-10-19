@@ -1,7 +1,7 @@
 import { Application, Container, Sprite, Texture, Graphics, BlurFilter, Rectangle } from 'pixi.js';
 import { PAD, makeCanvas, bake, trim, jitter } from './sticker';
 import { cutoutAI, cutoutFlat, modelAvailable } from './cutout';
-import { makeLetter } from './letters';
+import { makeSeparate, makeGrouped, FONTS, PALETTES, type LetterOpts } from './letters';
 import { samAvailable, segment, forget, type SamPoint } from './sam';
 
 const PW = 1000, PH = 1400; // taille de la feuille
@@ -327,26 +327,88 @@ const textPop = $('textpop');
 function closeTextPop() { textPop.classList.remove('open'); $('btn-text').classList.remove('on'); }
 $('btn-text').onclick = () => {
   const open = textPop.classList.toggle('open'); $('btn-text').classList.toggle('on', open);
-  if (open) { $<HTMLInputElement>('word').focus(); status('Tape un mot, Entrée pour composer.'); }
+  if (open) { $<HTMLInputElement>('word').focus(); renderPreview(); status('Tape un mot, Entrée pour l\'ajouter.'); }
 };
 $('word').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-word').click(); else if (e.key === 'Escape') closeTextPop(); });
 $('empty').onclick = () => $<HTMLInputElement>('file').click();
 $('btn-fit').onclick = () => fitView();
+// ---- lettres : options (papier commun ou séparé, police, couleurs, bords, état)
+type Mode = 'grouped' | 'separate';
+const LS_KEY = 'maxernzt.letters';
+const lo = (() => {
+  const d = { mode: 'separate' as Mode, font: 'mix', palette: 'mix', paper: '#e7a29a', ink: '#1d1d1d', tear: 35, dirt: 20 };
+  try { return { ...d, ...JSON.parse(localStorage.getItem(LS_KEY) || '{}') } as typeof d; } catch { return d; }
+})();
+let letterSeed = (Math.random() * 1e9) | 0;
+const letterOpts = (): LetterOpts => ({ font: lo.font, palette: lo.palette, paper: lo.paper, ink: lo.ink, tear: lo.tear, dirt: lo.dirt, seed: letterSeed });
+const icon = (id: string) => `<svg class="ic"><use href="#i-${id}"/></svg>`;
+
+function chip(parent: HTMLElement, v: string, tip: string, html: string, cls = '', css = '') {
+  const b = document.createElement('button');
+  b.className = 'chip ' + cls; b.dataset.v = v; b.dataset.tip = tip; b.dataset.pos = 'top'; b.innerHTML = html; if (css) b.style.cssText = css;
+  parent.appendChild(b); return b;
+}
+const fontBox = $('tp-fonts'), colorBox = $('tp-colors');
+chip(fontBox, 'mix', 'Polices mélangées', icon('shuffle'));
+for (const f of FONTS) chip(fontBox, f, f, 'Ag', '', `font-family:"${f}"; font-weight:${f === 'Impact' || f === 'Segoe Script' ? 400 : 700}`);
+chip(colorBox, 'mix', 'Couleurs mélangées', icon('shuffle'));
+for (const q of PALETTES) {
+  if (q.paper) chip(colorBox, q.id, q.id, 'A', 'paper', `background:${q.paper}; color:${q.ink}`);
+  else chip(colorBox, q.id, q.id === 'decoupe-rouge' ? 'Sans fond, rouge' : 'Sans fond, noir', 'A', 'paper nopaper', `color:${q.ink}`);
+}
+chip(colorBox, 'custom', 'Mes couleurs', icon('drop'));
+
+function syncLetterUI() {
+  fontBox.querySelectorAll<HTMLElement>('.chip').forEach(c => c.classList.toggle('on', c.dataset.v === lo.font));
+  colorBox.querySelectorAll<HTMLElement>('.chip').forEach(c => c.classList.toggle('on', c.dataset.v === lo.palette));
+  $('tp-mode').querySelectorAll<HTMLElement>('.ib').forEach(c => c.classList.toggle('on', c.dataset.mode === lo.mode));
+  $('tp-custom').classList.toggle('show', lo.palette === 'custom');
+  $<HTMLInputElement>('tp-paper').value = lo.paper; $<HTMLInputElement>('tp-ink').value = lo.ink;
+  for (const [id, key] of [['tp-tear', 'tear'], ['tp-dirt', 'dirt']] as const) {
+    const r = $<HTMLInputElement>(id); r.value = String(lo[key]); r.style.setProperty('--p', lo[key] + '%'); $('v-' + id).textContent = String(lo[key]);
+  }
+}
+function renderPreview() {
+  const cvp = $<HTMLCanvasElement>('tp-preview'), c = cvp.getContext('2d')!;
+  c.clearRect(0, 0, cvp.width, cvp.height);
+  const word = $<HTMLInputElement>('word').value.trim() || 'Aa';
+  const items = lo.mode === 'grouped' ? [makeGrouped(word, letterOpts(), 130)] : makeSeparate(word, letterOpts(), 130);
+  const gap = lo.mode === 'grouped' ? 0 : -6, total = items.reduce((t, i) => t + i.width + gap, 0) - gap, maxH = Math.max(...items.map(i => i.height));
+  const k = Math.min(1, (cvp.width - 40) / total, (cvp.height - 24) / maxH);
+  let x = (cvp.width - total * k) / 2;
+  for (const it of items) { c.drawImage(it, x, (cvp.height - it.height * k) / 2, it.width * k, it.height * k); x += (it.width + gap) * k; }
+}
+function letterChanged() { try { localStorage.setItem(LS_KEY, JSON.stringify(lo)); } catch { /* stockage indisponible */ } syncLetterUI(); renderPreview(); }
+fontBox.addEventListener('click', e => { const c = (e.target as HTMLElement).closest<HTMLElement>('.chip'); if (c) { lo.font = c.dataset.v!; letterChanged(); } });
+colorBox.addEventListener('click', e => { const c = (e.target as HTMLElement).closest<HTMLElement>('.chip'); if (c) { lo.palette = c.dataset.v!; letterChanged(); } });
+$('tp-mode').addEventListener('click', e => { const c = (e.target as HTMLElement).closest<HTMLElement>('.ib'); if (c) { lo.mode = c.dataset.mode as Mode; letterChanged(); } });
+$('tp-tear').oninput = e => { lo.tear = +(e.target as HTMLInputElement).value; letterChanged(); };
+$('tp-dirt').oninput = e => { lo.dirt = +(e.target as HTMLInputElement).value; letterChanged(); };
+$('tp-paper').oninput = e => { lo.paper = (e.target as HTMLInputElement).value; letterChanged(); };
+$('tp-ink').oninput = e => { lo.ink = (e.target as HTMLInputElement).value; letterChanged(); };
+$('word').addEventListener('input', renderPreview);
+$('tp-dice').onclick = () => { letterSeed = (Math.random() * 1e9) | 0; renderPreview(); };
+syncLetterUI();
+
 $('btn-word').onclick = () => {
   const word = $<HTMLInputElement>('word').value.trim(); if (!word) return;
-  const chars = [...word].filter(c => c !== ' ');
-  const letters = chars.map(c => makeLetter(c));
-  const total = letters.reduce((s, c) => s + c.width - 6, 0);
-  const sc = Math.min(1, (PW - 80) / total);
-  let x = PW / 2 - (total * sc) / 2;
-  const y = PH / 2 + (Math.random() - 0.5) * 100;
-  for (let i = 0; i < letters.length; i++) {
-    const c = letters[i];
-    addLayer(c, 'lettre-' + chars[i], { pos: { x: x + (c.width / 2) * sc, y: y + (Math.random() - 0.5) * 22 }, rot: (Math.random() - 0.5) * 0.35, scale: { x: sc, y: sc } });
-    x += (c.width - 6) * sc;
+  const o = letterOpts();
+  if (lo.mode === 'grouped') {
+    const c = makeGrouped(word, o, 130), sc = Math.min(1, (PW - 80) / c.width);
+    addLayer(c, word, { pos: { x: PW / 2, y: PH / 2 + (Math.random() - 0.5) * 100 }, rot: (Math.random() - 0.5) * 0.06, scale: { x: sc, y: sc } });
+  } else {
+    const chars = [...word].filter(ch => ch.trim()), letters = makeSeparate(word, o, 130);
+    const total = letters.reduce((t, c) => t + c.width - 6, 0), sc = Math.min(1, (PW - 80) / total);
+    let x = PW / 2 - (total * sc) / 2;
+    const y = PH / 2 + (Math.random() - 0.5) * 100;
+    letters.forEach((c, i) => {
+      addLayer(c, 'lettre-' + chars[i], { pos: { x: x + (c.width / 2) * sc, y: y + (Math.random() - 0.5) * 22 }, rot: (Math.random() - 0.5) * 0.35, scale: { x: sc, y: sc } });
+      x += (c.width - 6) * sc;
+    });
   }
+  letterSeed = (Math.random() * 1e9) | 0;
   commit(); closeTextPop(); $<HTMLInputElement>('word').value = '';
-  status(`Mot « ${word} » composé : chaque lettre est un calque indépendant.`);
+  status(lo.mode === 'grouped' ? `« ${word} » ajouté sur un seul papier.` : `« ${word} » ajouté : une lettre par calque.`);
 };
 
 // ---- export
@@ -427,11 +489,27 @@ $('btn-new').onclick = () => {
 addEventListener('beforeunload', e => { if (dirty && layers.length) e.preventDefault(); });
 
 // ---- souris
+// poignées : coins = taille (proportionnelle), rond au-dessus = rotation (Maj = pas de 15°)
+type HandleKind = 'nw' | 'ne' | 'se' | 'sw' | 'rot';
+interface Xf { kind: HandleKind; l: Layer; cx: number; cy: number; d0: number; sx: number; sy: number; a0: number; r0: number }
+const frameOf = (l: Layer) => ({ x0: PAD - l.border, y0: PAD - l.border, x1: PAD + l.base.width + l.border, y1: PAD + l.base.height + l.border });
+function handlePts(l: Layer): Record<HandleKind, Pt> {
+  const f = frameOf(l), g = (x: number, y: number) => l.box.toGlobal({ x, y }), mx = (f.x0 + f.x1) / 2;
+  const top = g(mx, f.y0), c = g(mx, (f.y0 + f.y1) / 2), dx = top.x - c.x, dy = top.y - c.y, d = Math.hypot(dx, dy) || 1;
+  return { nw: g(f.x0, f.y0), ne: g(f.x1, f.y0), se: g(f.x1, f.y1), sw: g(f.x0, f.y1), rot: { x: top.x + (dx / d) * 30, y: top.y + (dy / d) * 30 } };
+}
+function hitHandle(l: Layer, p: Pt): HandleKind | null {
+  const h = handlePts(l);
+  for (const k of ['rot', 'nw', 'ne', 'se', 'sw'] as HandleKind[]) if (Math.hypot(h[k].x - p.x, h[k].y - p.y) <= 10) return k;
+  return null;
+}
+const HANDLE_CURSOR: Record<HandleKind, string> = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', rot: 'grab' };
+let xf: Xf | null = null;
 let drag: { l: Layer; dx: number; dy: number } | null = null, pan: { sx: number; sy: number; vx: number; vy: number } | null = null, path: Pt[] | null = null;
 const cv = app.canvas;
 const pos = (e: PointerEvent | WheelEvent): Pt => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 cv.addEventListener('pointerdown', e => {
-  const p = pos(e); cv.setPointerCapture(e.pointerId);
+  const p = pos(e); cv.setPointerCapture(e.pointerId); closeTextPop();
   if (e.button === 1 || e.button === 2) { pan = { sx: p.x, sy: p.y, vx: view.x, vy: view.y }; return; }
   if (tool === 'sam') {
     const w = toWorld(p.x, p.y);
@@ -440,6 +518,14 @@ cv.addEventListener('pointerdown', e => {
   }
   if (tool !== 'move') { if (!selected) return status('Sélectionne d\'abord une image.'); path = [p]; return; }
   const w = toWorld(p.x, p.y);
+  if (selected) {
+    const kind = hitHandle(selected, p);
+    if (kind) {
+      const l = selected, cx = l.box.x, cy = l.box.y;
+      xf = { kind, l, cx, cy, d0: Math.hypot(w.x - cx, w.y - cy) || 1, sx: l.box.scale.x, sy: l.box.scale.y, a0: Math.atan2(w.y - cy, w.x - cx), r0: l.box.rotation };
+      return;
+    }
+  }
   for (let i = layers.length - 1; i >= 0; i--) {
     if (hit(layers[i], w)) { const l = layers[i]; select(l); toTop(l); drag = { l, dx: l.box.x - w.x, dy: l.box.y - w.y }; return; }
   }
@@ -447,11 +533,24 @@ cv.addEventListener('pointerdown', e => {
 });
 cv.addEventListener('pointermove', e => {
   const p = pos(e);
+  if (xf) {
+    const w = toWorld(p.x, p.y);
+    if (xf.kind === 'rot') {
+      let r = xf.r0 + (Math.atan2(w.y - xf.cy, w.x - xf.cx) - xf.a0);
+      if (e.shiftKey) r = Math.round(r / (Math.PI / 12)) * (Math.PI / 12);
+      xf.l.box.rotation = r;
+    } else {
+      const k = Math.max(0.02, Math.hypot(w.x - xf.cx, w.y - xf.cy) / xf.d0);
+      xf.l.box.scale.set(xf.sx * k, xf.sy * k);
+    }
+    return;
+  }
+  if (!pan && !drag && !path && tool === 'move') { const k = selected ? hitHandle(selected, p) : null; cv.style.cursor = k ? HANDLE_CURSOR[k] : 'default'; }
   if (pan) { view.x = pan.vx + p.x - pan.sx; view.y = pan.vy + p.y - pan.sy; applyView(); }
   else if (drag) { const w = toWorld(p.x, p.y); drag.l.box.position.set(w.x + drag.dx, w.y + drag.dy); }
   else if (path) { path.push(p); { const f = path.flatMap(q => [q.x, q.y]); pathG.clear().poly(f, false).stroke({ width: 5, color: 0x000000, alpha: 0.55 }).poly(f, false).stroke({ width: 2.2, color: 0xffffff }); } }
 });
-const end = () => { if (drag) commit(); if (path) { const pp = path; path = null; pathG.clear(); finishPath(pp); } drag = null; pan = null; };
+const end = () => { if (drag || xf) commit(); xf = null; if (path) { const pp = path; path = null; pathG.clear(); finishPath(pp); } drag = null; pan = null; };
 cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('wheel', e => {
@@ -494,9 +593,14 @@ addEventListener('keydown', e => {
 app.ticker.add(() => {
   selG.clear();
   if (selected) {
-    const l = selected, w = l.baked.width, h = l.baked.height;
-    const q = [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }].map(c => l.box.toGlobal(c)).flatMap(c => [c.x, c.y]);
+    const h = handlePts(selected), q = [h.nw, h.ne, h.se, h.sw].flatMap(c => [c.x, c.y]);
     selG.poly(q).stroke({ width: 4, color: 0x000000, alpha: 0.5 }).poly(q).stroke({ width: 1.5, color: 0xffffff });
+    if (tool === 'move') {
+      const top = { x: (h.nw.x + h.ne.x) / 2, y: (h.nw.y + h.ne.y) / 2 };
+      selG.moveTo(top.x, top.y).lineTo(h.rot.x, h.rot.y).stroke({ width: 1.5, color: 0xffffff });
+      for (const k of ['nw', 'ne', 'se', 'sw'] as const) selG.rect(h[k].x - 5, h[k].y - 5, 10, 10).fill(0xffffff).stroke({ width: 1.5, color: 0x1d1f23 });
+      selG.circle(h.rot.x, h.rot.y, 6).fill(0xf2b134).stroke({ width: 1.5, color: 0x1d1f23 });
+    }
   }
   syncPanels();
 });

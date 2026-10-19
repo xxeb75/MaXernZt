@@ -47,6 +47,7 @@ button:focus-visible, input:focus-visible, .ly:focus-visible { outline: 2px soli
 [data-tip]:hover::after { opacity: 1; transition-delay: .25s; }
 [data-pos="right"]::after { left: calc(100% + 8px); top: 50%; transform: translateY(-50%); }
 [data-pos="bottom"]::after { top: calc(100% + 8px); left: 50%; transform: translateX(-50%); }
+[data-pos="top"]::after { bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); }
 [data-pos="bottom-left"]::after { top: calc(100% + 8px); right: 0; }
 
 /* barres */
@@ -79,10 +80,29 @@ input[type=range]:hover::-webkit-slider-thumb { background: #fff; }
 /* boîte à outils */
 #tools { grid-area: tools; position: relative; z-index: 5; display: flex; flex-direction: column; gap: 3px; padding: 8px 0; background: var(--panel); border-right: 1px solid var(--line); }
 #tools hr { width: 28px; height: 1px; margin: 5px auto; border: 0; background: var(--line); }
-#textpop { position: absolute; left: 58px; bottom: 8px; display: none; align-items: center; gap: 4px; padding: 5px; border-radius: 8px; background: #0f1113; box-shadow: 0 0 0 1px var(--line), 0 8px 24px rgba(0,0,0,.5); }
+#textpop { position: absolute; left: 58px; bottom: 8px; width: 304px; max-height: calc(100vh - 150px); display: none; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; background: #0f1113; box-shadow: 0 0 0 1px var(--line), 0 10px 30px rgba(0,0,0,.55); }
 #textpop.open { display: flex; }
-#word { width: 160px; height: 32px; padding: 0 10px; border: 0; border-radius: 5px; background: var(--raise); color: var(--text); font: 600 16px var(--font); }
+.tp-row { display: flex; gap: 6px; }
+#word { flex: 1; min-width: 0; height: 34px; padding: 0 10px; border: 0; border-radius: 6px; background: var(--raise); color: var(--text); font: 600 16px var(--font); }
 #word::placeholder { color: var(--dim); }
+.ib.ok { background: var(--accent); color: var(--on-accent); width: 34px; height: 34px; }
+.ib.ok:hover { background: #ffc54f; }
+.tp-prev { position: relative; height: 76px; border-radius: 6px; background: #1b1e22; overflow: hidden; }
+.tp-prev canvas { width: 100%; height: 100%; display: block; }
+.tp-prev .ib { position: absolute; right: 4px; top: 4px; width: 28px; height: 28px; background: rgba(15,17,19,.7); }
+.seg { display: flex; gap: 4px; padding: 3px; border-radius: 8px; background: var(--chrome); width: max-content; }
+.seg .ib { width: 40px; height: 30px; }
+.seg .ib.on { background: var(--accent); color: var(--on-accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { position: relative; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 6px; background: var(--raise); color: var(--text); font-size: 17px; line-height: 1; overflow: hidden; }
+.chip:hover { background: #3f454e; }
+.chip.on { box-shadow: 0 0 0 2px var(--accent); }
+.chip .ic { width: 18px; height: 18px; }
+.chip.paper { font: 700 17px Georgia, serif; }
+.chip.nopaper { background: repeating-conic-gradient(#555c67 0 25%, #434952 0 50%) 0 0 / 10px 10px; }
+.tp-custom { display: none; gap: 6px; } .tp-custom.show { display: flex; }
+#textpop .ctl { padding: 0 4px; }
+#textpop input[type=range] { flex: 1; width: auto; }
 
 /* plan de travail : tapis de coupe */
 #stage {
