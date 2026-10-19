@@ -2,6 +2,7 @@ import { Application, Container, Sprite, Texture, Graphics, BlurFilter, Rectangl
 import { PAD, makeCanvas, bake, trim, jitter } from './sticker';
 import { cutoutAI, cutoutFlat, modelAvailable } from './cutout';
 import { makeSeparate, makeGrouped, makeOne, FONTS, PALETTES, type LetterOpts, type LetterSpec } from './letters';
+import { ACC_KINDS, ACC_COLORS, ACC_DEFAULTS, type AccCat, type AccKind, type AccParams } from './accessories';
 import { samAvailable, segment, forget, type SamPoint } from './sam';
 import { type Group, type Leaf, type Node, type TNode, isGroup, leavesOf, detach, attach, prune, topNode, lca, childOf, contains, serialize, buildTree } from './groups';
 
@@ -13,8 +14,10 @@ type Pt = { x: number; y: number };
 interface Key { u: number; hold: number; spin: number; ball?: boolean }  // ball : true = se chiffonne, false = se déchiffonne, absent = garde l'état précédent
 interface Anim { pts: Pt[]; dur: number; mode: 'loop' | 'pingpong'; ease: 'linear' | 'smooth'; follow: boolean; keys?: Key[] }
 interface BallFx { spr: Sprite; sh: Sprite; fold: Sprite; frames: Texture[]; k: number; sz: number }
+/** Accessoire généré (scotch, peinture, punaise…) : type et réglages, pour pouvoir le modifier par double-clic. */
+interface AccSpec { kind: string; p: AccParams }
 interface Layer extends Leaf {
-  anim?: Anim; ball?: BallFx; name: string; visible: boolean; base: HTMLCanvasElement; baked: HTMLCanvasElement;
+  acc?: AccSpec; anim?: Anim; ball?: BallFx; name: string; visible: boolean; base: HTMLCanvasElement; baked: HTMLCanvasElement;
   border: number; shadow: number; rough: number; letter?: LetterSpec;
   box: Container; sprite: Sprite; shade: Sprite;
 }
@@ -141,14 +144,14 @@ function hit(l: Layer, p: Pt): boolean {
 }
 
 // ---- historique (annuler / rétablir) : instantanés légers, les canvas de base sont immuables
-interface LState { id: number; name: string; visible: boolean; anim?: Anim; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
+interface LState { id: number; name: string; visible: boolean; anim?: Anim; acc?: AccSpec; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
 interface Snap { layers: LState[]; bg: string; tree: TNode[]; sel: number[] }
 const snap = (): Snap => ({
-  layers: layers.map(l => ({ id: l.id, name: l.name, visible: l.visible, anim: l.anim, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: restPose.get(l)?.x ?? l.box.x, y: restPose.get(l)?.y ?? l.box.y, rot: restPose.get(l)?.r ?? l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y })),
+  layers: layers.map(l => ({ id: l.id, name: l.name, visible: l.visible, anim: l.anim, acc: l.acc, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: restPose.get(l)?.x ?? l.box.x, y: restPose.get(l)?.y ?? l.box.y, rot: restPose.get(l)?.r ?? l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y })),
   bg: bgColor, tree: serialize(root), sel: [...selection].filter(l => l !== selected).concat(selected ? [selected] : []).map(l => l.id),
 });
 const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.layers.length === b.layers.length && JSON.stringify(a.tree) === JSON.stringify(b.tree) &&
-  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.visible === v.visible && u.anim === v.anim && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
+  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.visible === v.visible && u.anim === v.anim && u.acc === v.acc && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
 const hist: Snap[] = []; let hi = -1, soon = 0;
 function updHistUI() { ($('btn-undo') as HTMLButtonElement).disabled = hi <= 0; ($('btn-redo') as HTMLButtonElement).disabled = hi >= hist.length - 1; }
 function commit() {
@@ -176,7 +179,7 @@ function restore(s: Snap) {
       l.box.position.set(st.x, st.y); l.box.rotation = st.rot; l.box.scale.set(st.sx, st.sy);
       if (dirty) refresh(l);
     }
-    l.letter = st.letter; l.visible = st.visible !== false; l.anim = st.anim;
+    l.letter = st.letter; l.visible = st.visible !== false; l.anim = st.anim; l.acc = st.acc;
     ordered.push(l);
   }
   root.children = [];
@@ -189,7 +192,7 @@ function restore(s: Snap) {
   setSelection(sl, sl[sl.length - 1]);
 }
 function hasAncestorRoot(l: Layer) { let g: Group | null = l.parent; while (g) { if (g === root) return l.parent.children.includes(l); g = g.parent; } return false; }
-function undo() { stopPlay(); if (hi > 0) { hi--; restore(hist[hi]); updHistUI(); status('Annulé.'); } }
+function undo() { stopPlay(); commit(); if (hi > 0) { hi--; restore(hist[hi]); updHistUI(); status('Annulé.'); } }
 function redo() { stopPlay(); if (hi < hist.length - 1) { hi++; restore(hist[hi]); updHistUI(); status('Rétabli.'); } }
 $('btn-undo').onclick = undo; $('btn-redo').onclick = redo;
 
@@ -218,7 +221,7 @@ addEventListener('paste', e => { if (e.clipboardData) importAll(e.clipboardData.
 function setBase(l: Layer, nb: HTMLCanvasElement, x0: number, y0: number) {
   const pivNew: Pt = { x: nb.width / 2 + PAD, y: nb.height / 2 + PAD };
   const pos = layerToWorld(l, { x: pivNew.x + x0, y: pivNew.y + y0 });
-  forget(l.base); l.base = nb; l.letter = undefined; l.box.position.set(pos.x, pos.y); refresh(l);
+  forget(l.base); l.base = nb; l.letter = undefined; l.acc = undefined; l.box.position.set(pos.x, pos.y); refresh(l);
 }
 function replaceBase(l: Layer, nb: HTMLCanvasElement) {
   const t = trim(nb); if (!t) { status('Rien ne reste après le détourage.'); return; }
@@ -401,7 +404,7 @@ function cloneNode(n: Node, parent: Group, dx: number, dy: number, out: Layer[])
   }
   const l = n as Layer;
   const nl = addLayer(l.base, l.name, { pos: { x: l.box.x + dx, y: l.box.y + dy }, rot: l.box.rotation, scale: { x: l.box.scale.x, y: l.box.scale.y } }, { border: l.border, shadow: l.shadow, rough: l.rough });
-  nl.letter = l.letter; nl.visible = l.visible; nl.anim = l.anim; detach(nl); attach(nl, parent); out.push(nl);
+  nl.letter = l.letter; nl.visible = l.visible; nl.anim = l.anim; nl.acc = l.acc; detach(nl); attach(nl, parent); out.push(nl);
   return nl;
 }
 $('btn-dup').onclick = () => {
@@ -480,6 +483,7 @@ function closeTextPop() {
 }
 $('btn-text').onclick = () => {
   if (textPop.classList.contains('open')) { closeTextPop(); return; }
+  closeAccPop();
   const open = textPop.classList.toggle('open'); $('btn-text').classList.toggle('on', open);
   if (open) { $<HTMLInputElement>('word').focus(); renderPreview(); status('Tape un mot, Entrée pour l\'ajouter.'); }
 };
@@ -586,6 +590,73 @@ $('btn-word').onclick = () => {
   status(lo.mode === 'grouped' ? `« ${word} » ajouté sur un seul papier.` : `« ${word} » ajouté : une lettre par calque.`);
 };
 
+// ---- accessoires : scotch, peinture, punaises, trombones… des calques comme les autres, réglables (double-clic pour les modifier)
+const accPop = $('accpop');
+let accCat: AccCat = 'tape', accP: AccParams = { ...ACC_DEFAULTS, seed: (Math.random() * 1e9) | 0 };
+let accEditing: Layer | null = null, accBackup: AccParams | null = null;
+const accById = (id: string) => ACC_KINDS.find(k => k.id === id)!;
+function closeAccPop() {
+  accPop.classList.remove('open', 'editing'); $('btn-acc').classList.remove('on');
+  if (accEditing) { accEditing = null; if (accBackup) accP = accBackup; accBackup = null; syncAcc(); } // retour aux réglages d'ajout
+}
+function renderAccGrid() {
+  const grid = $('acc-grid'); grid.innerHTML = '';
+  for (const k of ACC_KINDS.filter(q => q.cat === accCat)) {
+    const src = k.make(accP), f = Math.min(1, 66 / src.width, 66 / src.height), t = makeCanvas(src.width * f, src.height * f);
+    t.getContext('2d')!.drawImage(src, 0, 0, t.width, t.height);
+    const b = document.createElement('button'); b.className = 'acc' + (accEditing?.acc?.kind === k.id ? ' on' : ''); b.dataset.tip = k.tip; b.dataset.pos = 'top'; b.appendChild(t);
+    b.onclick = () => (accEditing ? applyAccEdit(k) : addAccessory(k)); grid.appendChild(b);
+  }
+}
+/** Mode modification : le calque est régénéré en direct avec les réglages du panneau (position, rotation et taille de calque conservées). */
+function applyAccEdit(kind?: AccKind) {
+  const l = accEditing; if (!l?.acc) return;
+  const k = kind ?? accById(l.acc.kind);
+  forget(l.base); l.base = k.make(accP); l.acc = { kind: k.id, p: { ...accP } }; l.name = k.tip; refresh(l); commitSoon();
+  if (kind) renderAccGrid();
+}
+function accChanged() { syncAcc(); renderAccGrid(); applyAccEdit(); }
+function addAccessory(k: AccKind) {
+  const c = k.make(accP), ctr = toWorld(app.screen.width / 2, app.screen.height / 2);
+  const x = Math.min(PW - 80, Math.max(80, ctr.x)) + (Math.random() - 0.5) * 50, y = Math.min(PH - 80, Math.max(80, ctr.y)) + (Math.random() - 0.5) * 50;
+  const rot = (Math.random() - 0.5) * (k.cat === 'tape' ? 0.5 : 1.2);
+  const l = addLayer(c, k.tip, { pos: { x, y }, rot, scale: { x: 1, y: 1 } }, { border: 0, shadow: k.shadow, rough: 0 });
+  l.acc = { kind: k.id, p: { ...accP } };
+  accP.seed = (Math.random() * 1e9) | 0; renderAccGrid(); commit();
+  status(`« ${k.tip} » ajouté : double-clic dessus pour le régler (couleur, longueur, usure).`);
+}
+const accColors = $('acc-colors');
+for (const col of ACC_COLORS) {
+  const b = document.createElement('button'); b.className = 'chip sw'; b.style.background = col; b.dataset.v = col; b.dataset.tip = 'Couleur'; b.dataset.pos = 'top';
+  b.onclick = () => { accP.color = col; accChanged(); }; accColors.appendChild(b);
+}
+function syncAcc() {
+  accPop.dataset.cat = accCat;
+  accColors.querySelectorAll<HTMLElement>('.chip.sw').forEach(c => c.classList.toggle('on', c.dataset.v === accP.color));
+  $('acc-cats').querySelectorAll<HTMLElement>('.ib').forEach(c => c.classList.toggle('on', c.dataset.cat === accCat));
+  $('acc-custom').classList.toggle('on', !ACC_COLORS.includes(accP.color)); $<HTMLInputElement>('acc-custom-in').value = accP.color;
+  for (const [id, key, unit] of [['acc-len', 'length', ' %'], ['acc-size', 'size', ' %'], ['acc-wear', 'wear', '']] as const) {
+    const r = $<HTMLInputElement>(id); r.value = String(accP[key]);
+    r.style.setProperty('--p', ((+r.value - +r.min) / (+r.max - +r.min)) * 100 + '%'); $('v-' + id).textContent = r.value + unit;
+  }
+}
+$('acc-cats').addEventListener('click', e => { const b = (e.target as HTMLElement).closest<HTMLElement>('.ib'); if (b) { accCat = b.dataset.cat as AccCat; syncAcc(); renderAccGrid(); } });
+$<HTMLInputElement>('acc-custom-in').oninput = e => { accP.color = (e.target as HTMLInputElement).value; accChanged(); };
+for (const [id, key] of [['acc-len', 'length'], ['acc-size', 'size'], ['acc-wear', 'wear']] as const) $<HTMLInputElement>(id).oninput = e => { accP[key] = +(e.target as HTMLInputElement).value; accChanged(); };
+$('acc-dice').onclick = () => { accP.seed = (Math.random() * 1e9) | 0; accChanged(); };
+$('btn-acc').onclick = () => {
+  if (accPop.classList.contains('open')) { closeAccPop(); return; }
+  closeTextPop(); accPop.classList.add('open'); $('btn-acc').classList.add('on'); syncAcc(); renderAccGrid();
+  status('Choisis un accessoire, règle sa couleur, sa longueur ou son usure, puis clique pour l\'ajouter.');
+};
+function openAccEdit(l: Layer) {
+  const sp = l.acc; if (!sp) return;
+  closeAccPop(); closeTextPop();
+  accEditing = l; accBackup = { ...accP }; accP = { ...sp.p }; accCat = accById(sp.kind).cat;
+  accPop.classList.add('open', 'editing'); $('btn-acc').classList.add('on'); syncAcc(); renderAccGrid();
+  status("Modification de l'accessoire en direct : un clic sur un autre modèle le remplace.");
+}
+
 // ---- export
 function extractPaper(): HTMLCanvasElement {
   const save = { ...view };
@@ -632,7 +703,7 @@ async function saveProject() {
   const out = layers.map(l => {
     let id = ids.get(l.base);
     if (!id) { id = 'img' + ids.size; ids.set(l.base, id); images[id] = l.base.toDataURL('image/png'); }
-    return { id: l.id, name: l.name, visible: l.visible, anim: l.anim, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
+    return { id: l.id, name: l.name, visible: l.visible, anim: l.anim, acc: l.acc, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
   });
   const blob = new Blob([JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, tree: serialize(root), layers: out, images })], { type: 'application/json' });
   const fileName = projectName + '.maxernzt';
@@ -672,7 +743,7 @@ async function loadProject(f: File) {
     if (d.format !== 'maxernzt' || !Array.isArray(d.layers)) throw new Error('fichier non reconnu');
     const imgs = new Map<string, HTMLCanvasElement>();
     for (const [id, url] of Object.entries<string>(d.images)) imgs.set(id, await decode(url));
-    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, anim: l.anim, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
+    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, anim: l.anim, acc: l.acc, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
     restore({ layers: ls, bg: d.bg ?? bgColor, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); commit(); dirty = false;
@@ -836,7 +907,7 @@ cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('dblclick', e => {
   if (tool !== 'move' || playing) return;
   const w = toWorld(pos(e).x, pos(e).y);
-  for (let i = layers.length - 1; i >= 0; i--) if (hit(layers[i], w)) { const l = layers[i]; setSelection([l], l); if (l.letter) openLetterEdit(l); return; }
+  for (let i = layers.length - 1; i >= 0; i--) if (hit(layers[i], w)) { const l = layers[i]; setSelection([l], l); if (l.letter) openLetterEdit(l); else if (l.acc) openAccEdit(l); return; }
 });
 cv.addEventListener('wheel', e => {
   e.preventDefault();
@@ -870,12 +941,13 @@ addEventListener('keydown', e => {
   if (key === 'x') { click('btn-scissors'); return; }
   if (key === 'r') { click('btn-tear'); return; }
   if (key === 't') { e.preventDefault(); click('btn-text'); return; }
+  if (key === 'e') { click('btn-acc'); return; }
   if (key === '0') { fitView(); return; }
   if (key === ']') { click('btn-up'); return; }
   if (key === '[') { click('btn-down'); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && selection.size) click('btn-del');
   if (e.key === 'Enter') samValidate();
-  if (e.key === 'Escape') { stopPlay(); samClear(); path = null; marq = null; pathG.clear(); if (tool !== 'move') setTool(tool); }
+  if (e.key === 'Escape') { stopPlay(); closeAccPop(); samClear(); path = null; marq = null; pathG.clear(); if (tool !== 'move') setTool(tool); }
 });
 
 // ---- surcouche de sélection

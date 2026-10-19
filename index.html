@@ -64,6 +64,12 @@
   <symbol id="i-spin" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.4-5.5"/><path d="M19.8 4v4.6h-4.6"/></symbol>
   <symbol id="i-ball" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M7.4 9.2l4.2 2.2 4.4-3.2M6.8 14.6l5-1.4 4.4 4M11.6 11.4l-.8 7.2"/></symbol>
   <symbol id="i-unfold" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1.6"/><path d="M10 14l-3.4 3.4M6.6 14v3.4H10M14 10l3.4-3.4M17.4 10V6.6H14"/></symbol>
+  <symbol id="i-acc" viewBox="0 0 24 24"><path d="M9 3.5h6M10.2 3.5l-.5 6-3.2 3h11l-3.2-3-.5-6M12 12.5V21"/></symbol>
+  <symbol id="i-tape" viewBox="0 0 24 24"><path d="M5.5 7.5L4 9l1.5 1.5L4 12l1.5 1.5L4 15l1.5 1.5h13L20 15l-1.5-1.5L20 12l-1.5-1.5L20 9l-1.5-1.5z"/><path d="M8.5 12h7" opacity=".5"/></symbol>
+  <symbol id="i-brush" viewBox="0 0 24 24"><path d="M19 4.2c.6 3-2 6-5.4 8.4l-2.6-2.6C13.4 6.7 16.2 4.1 19 4.2z"/><path d="M11 10c-3 .5-3.5 3.2-4.1 5.3-.5 1.7-2 2.5-3.4 2.5 2.7 2.8 7.8 2.3 8.7-1.5.4-1.7.4-2.9-1.2-4.3z"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.4"/><path d="M8.2 8.8a5 5 0 0 1 2.6-2"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="M8.5 15V6.5a3.5 3.5 0 0 1 7 0V17a2.7 2.7 0 0 1-5.4 0V8.8"/></symbol>
+  <symbol id="i-ruler" viewBox="0 0 24 24"><path d="M4 15.5L15.5 4 20 8.5 8.5 20z"/><path d="M8 12l2 2M11 9l1.5 1.5M14 6.5l2 2"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
 </svg>
 
@@ -125,7 +131,26 @@
   <hr>
   <button id="btn-path" class="tb" data-tip="Trajectoire (P)" data-pos="right"><svg class="ic"><use href="#i-path"/></svg></button>
   <hr>
+  <button id="btn-acc" class="tb" data-tip="Accessoires : scotch, peinture, punaises (E)" data-pos="right"><svg class="ic"><use href="#i-acc"/></svg></button>
   <button id="btn-text" class="tb" data-tip="Lettres découpées (T)" data-pos="right"><svg class="ic"><use href="#i-letter"/></svg></button>
+  <div id="accpop" data-cat="tape">
+    <div class="seg" id="acc-cats">
+      <button class="ib on" data-cat="tape" data-tip="Scotch et rubans" data-pos="top"><svg class="ic"><use href="#i-tape"/></svg></button>
+      <button class="ib" data-cat="paint" data-tip="Peinture" data-pos="top"><svg class="ic"><use href="#i-brush"/></svg></button>
+      <button class="ib" data-cat="pin" data-tip="Punaises" data-pos="top"><svg class="ic"><use href="#i-pin"/></svg></button>
+      <button class="ib" data-cat="metal" data-tip="Trombones et agrafes" data-pos="top"><svg class="ic"><use href="#i-clip"/></svg></button>
+    </div>
+    <div id="acc-grid"></div>
+    <div class="chips" id="acc-colors">
+      <label class="swatch chip" id="acc-custom" data-tip="Autre couleur" data-pos="top"><input id="acc-custom-in" type="color" value="#c1272d"></label>
+    </div>
+    <label class="ctl" id="acc-len-row" data-tip="Longueur du ruban" data-pos="top"><svg class="ic"><use href="#i-ruler"/></svg><input id="acc-len" type="range" min="0" max="100" value="38"><output id="v-acc-len"></output></label>
+    <label class="ctl" id="acc-size-row" data-tip="Taille" data-pos="top"><svg class="ic"><use href="#i-fit"/></svg><input id="acc-size" type="range" min="30" max="250" value="100"><output id="v-acc-size"></output></label>
+    <div class="tp-row">
+      <label class="ctl grow" data-tip="État : neuf → abîmé (jaunissement, taches, plis, fissures, rouille selon la matière)" data-pos="top"><svg class="ic"><use href="#i-stain"/></svg><input id="acc-wear" type="range" min="0" max="100" value="15"><output id="v-acc-wear"></output></label>
+      <button id="acc-dice" class="ib" data-tip="Autre tirage" data-pos="top"><svg class="ic"><use href="#i-dice"/></svg></button>
+    </div>
+  </div>
   <div id="textpop">
     <div class="tp-row">
       <input id="word" type="text" maxlength="24" placeholder="Aa…" autocomplete="off" spellcheck="false">
