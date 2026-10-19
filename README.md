@@ -23,7 +23,7 @@ Outil « Détourer au clic » : clic sur l'objet → aperçu ; Maj+clic ajoute u
 ## Outils actuels
 
 - Import (bouton, glisser-déposer, Ctrl+V), détourage IA ou fond uni
-- Ciseaux (tracé libre, bord irrégulier) et déchirure (ligne, bord fibreux, morceaux séparés)
+- Ciseaux : tracé ouvert = le papier est coupé en deux le long du tracé (extrémités prolongées), on garde les ciseaux et le plus gros morceau pour recouper ; bouton « jeter la chute » ; tracé fermé (on revient au point de départ) = on découpe l'intérieur. Déchirure : même principe, tracé libre, bord fibreux
 - Contour blanc organique (épaisseur inégale, bord arraché, fibres ; curseur d'irrégularité), ombre réglable par calque, miroir, duplication, ordre
 - Lettres découpées : mot sur un même papier ou une lettre par papier, choix de la police (ou mélange), des couleurs (préréglages, mélange ou personnalisées), bords coupés → déchirés, état neuf → crade, aperçu en direct et tirage (dé)
 - Double-clic sur une lettre : le panneau s'ouvre avec son style et la modifie en direct (police, couleurs, bords, état, tirage, texte) ; le style est mémorisé dans le projet

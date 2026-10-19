@@ -304,29 +304,68 @@ function samValidate() {
   if (tool === 'sam') setTool('sam');
 }
 
+/** Part (0-1) de la surface opaque du calque qui tombe dans le polygone (coordonnées monde). */
+function areaFrac(l: Layer, polyW: Pt[]): number {
+  const k = 0.1, w = Math.max(1, Math.round(l.base.width * k)), h = Math.max(1, Math.round(l.base.height * k));
+  const c = makeCanvas(w, h), ctx = c.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(l.base, 0, 0, w, h);
+  const sum = () => { const d = ctx.getImageData(0, 0, w, h).data; let t = 0; for (let i = 3; i < d.length; i += 4) t += d[i]; return t; };
+  const tot = sum(); if (!tot) return 0;
+  ctx.globalCompositeOperation = 'destination-in'; ctx.beginPath();
+  polyW.forEach((p, i) => { const q = worldToLayer(l, p), x = (q.x - PAD) * k, y = (q.y - PAD) * k; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+  ctx.closePath(); ctx.fillStyle = '#000'; ctx.fill();
+  return sum() / tot;
+}
+
+/**
+ * Coupe le long d'un tracé ouvert, comme une paire de ciseaux qui traverse le papier : les extrémités sont
+ * prolongées pour séparer le calque en deux, et la plus petite part devient un nouveau calque (écartée d'un cran).
+ */
+function splitAlongPath(l: Layer, pts: Pt[], step: number, amp: number, nudge: number): Layer | null {
+  const n = pts.length, k = Math.min(6, n - 1);
+  const dir = (a: Pt, b: Pt) => { const dx = a.x - b.x, dy = a.y - b.y, d = Math.hypot(dx, dy) || 1; return { x: dx / d, y: dy / d }; };
+  const d0 = dir(pts[0], pts[k]), d1 = dir(pts[n - 1], pts[n - 1 - k]), far = 6000;
+  const e0 = { x: pts[0].x + d0.x * far, y: pts[0].y + d0.y * far }, e1 = { x: pts[n - 1].x + d1.x * far, y: pts[n - 1].y + d1.y * far };
+  const q = [e0, ...jitter(pts, step, amp), e1];
+  const cx = e1.x - e0.x, cy = e1.y - e0.y, cl = Math.hypot(cx, cy) || 1, nx = -cy / cl, ny = cx / cl;
+  const side = (sg: number) => [...q, { x: e1.x + sg * nx * far * 2, y: e1.y + sg * ny * far * 2 }, { x: e0.x + sg * nx * far * 2, y: e0.y + sg * ny * far * 2 }];
+  const pa = side(1), pb = side(-1), fa = areaFrac(l, pa);
+  const sg = fa <= 0.5 ? 1 : -1, f = sg === 1 ? fa : areaFrac(l, pb);
+  if (f < 0.003) return null;
+  const piece = cutPolygon(l, sg === 1 ? pa : pb);
+  if (piece) piece.box.position.set(piece.box.x + sg * nx * nudge, piece.box.y + sg * ny * nudge);
+  return piece;
+}
+
+let discardScraps = false;
+try { discardScraps = localStorage.getItem('maxernzt.discard') === '1'; } catch { /* stockage indisponible */ }
+const syncScrap = () => $('btn-scrap').classList.toggle('on', discardScraps);
+$('btn-scrap').onclick = () => { discardScraps = !discardScraps; try { localStorage.setItem('maxernzt.discard', discardScraps ? '1' : '0'); } catch { /* ignoré */ } syncScrap(); };
+syncScrap();
+
 function finishPath(screenPts: Pt[]) {
   const l = selected; if (!l || screenPts.length < 3) return;
   const pts = screenPts.map(p => toWorld(p.x, p.y));
+  let piece: Layer | null, keepTool = false;
   if (tool === 'scissors') {
-    const closed = jitter([...pts, pts[0]], 6 / view.s, 1.5 / view.s);
-    const piece = cutPolygon(l, closed);
-    commit();
-    status(piece ? 'Morceau découpé : déplace-le.' : 'Rien dans la zone tracée.');
-    if (piece) select(piece);
+    const len = pts.reduce((t, p, i) => t + (i ? Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y) : 0), 0);
+    const gap = Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y);
+    if (gap * view.s < 30 || gap < len * 0.12) { // boucle fermée : on découpe l'intérieur
+      piece = cutPolygon(l, jitter([...pts, pts[0]], 6 / view.s, 1.5 / view.s));
+      status(piece ? 'Morceau découpé : déplace-le.' : 'Rien dans la zone tracée.');
+    } else { // tracé ouvert : le papier est coupé en deux ; on garde les ciseaux et le plus gros morceau pour couper encore
+      piece = splitAlongPath(l, pts, 6 / view.s, 1.2 / view.s, 8 / view.s);
+      keepTool = true;
+      if (piece && discardScraps) { removeLayer(piece); piece = null; status('Coupé : chute jetée. Continue de couper, ou Échap.'); }
+      else status(piece ? 'Coupé : deux morceaux. Continue de couper, ou Échap.' : "Le tracé ne traverse pas l'image.");
+    }
   } else {
-    // déchirure : droite entre premier et dernier point, prolongée, bord fibreux
-    const a = pts[0], b = pts[pts.length - 1];
-    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
-    const far = 4000, p0 = { x: a.x - ux * far, y: a.y - uy * far }, p1 = { x: b.x + ux * far, y: b.y + uy * far };
-    const edge = jitter([p0, p1], 5, 7);
-    const nx = -uy, ny = ux;
-    const sideA = [...edge, { x: p1.x + nx * far, y: p1.y + ny * far }, { x: p0.x + nx * far, y: p0.y + ny * far }];
-    const piece = cutPolygon(l, sideA);
-    if (piece) { piece.box.position.x += nx * 14; piece.box.position.y += ny * 14; }
-    commit();
-    status(piece ? 'Image déchirée en deux : sépare les morceaux.' : 'La ligne ne traverse pas l\'image.');
-    if (piece) select(piece);
+    piece = splitAlongPath(l, pts, 5, 7, 14);
+    status(piece ? 'Déchiré : la plus petite part est sélectionnée.' : "Le tracé ne traverse pas l'image.");
   }
+  commit();
+  if (keepTool) { select(layers.includes(l) ? l : layers[layers.length - 1] ?? null); return; }
+  if (piece) select(piece);
   setTool(tool);
 }
 

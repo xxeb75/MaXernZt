@@ -162,3 +162,5 @@ body.drop #stage::after { content: ""; position: absolute; inset: 12px; border: 
 .eye:hover { background: rgba(255,255,255,.1); color: var(--text); }
 .eye.off { color: var(--danger); }
 .ly.hid .th, .ly.hid .nm, .ly.hid .fold { opacity: .4; }
+
+.ib.on { background: var(--accent); color: var(--on-accent); }
