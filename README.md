@@ -30,9 +30,15 @@ Outil « Détourer au clic » : clic sur l'objet → aperçu ; Maj+clic ajoute u
 - Annuler / rétablir (Ctrl+Z, Ctrl+Y ; 60 étapes) pour toutes les actions
 - Export PNG de la feuille, export des calques (PNG + `manifest.json` compatible Godot/animation)
 
+## Interface
+
+Boîte à outils à gauche (pictos, info-bulle = nom + raccourci), barre projet/historique/export en haut, barre d'options du calque dessous (contour, ombre, miroir, dupliquer, ordre, supprimer, tolérance, couleur de feuille, zoom), panneau de calques à droite (clic = sélectionner, glisser = réordonner), plan de travail en tapis de coupe.
+
+Raccourcis : V déplacer · A détourage auto · C détourage au clic · B fond uni · X ciseaux · R déchirer · T lettres · [ ] ordre · 0 tout voir · Ctrl+D dupliquer · Ctrl+Z/Y · Ctrl+S/O · Suppr.
+
 ## Commandes souris
 
-Clic : sélectionner/déplacer · Alt+molette : taille · Maj+molette : rotation · molette : zoom · clic milieu/droit : déplacer la vue · Suppr : effacer
+Clic : sélectionner/déplacer · Alt+molette : taille · Maj+molette : rotation · molette : zoom · clic milieu/droit : déplacer la vue
 
 ## Pistes
 

@@ -17,7 +17,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const status = (s: string) => ($('status').textContent = s);
 
 const app = new Application();
-await app.init({ resizeTo: $('stage'), background: '#2b3237', antialias: true, resolution: window.devicePixelRatio, autoDensity: true });
+await app.init({ resizeTo: $('stage'), backgroundAlpha: 0, antialias: true, resolution: window.devicePixelRatio, autoDensity: true });
 $('stage').appendChild(app.canvas);
 
 const world = new Container();
@@ -29,17 +29,29 @@ world.addChild(paper);
 app.stage.addChild(world, ui);
 
 let bgColor = '#cfe8e6';
-const drawPaper = () => { paper.clear().rect(0, 0, PW, PH).fill(bgColor); };
+const drawPaper = () => {
+  paper.clear();
+  for (let i = 8; i >= 1; i--) paper.roundRect(-i * 1.5, 6 - i * 1.5, PW + i * 3, PH + i * 3, 3).fill({ color: 0x000000, alpha: 0.04 });
+  paper.rect(0, 0, PW, PH).fill(bgColor);
+};
 drawPaper();
 
 // ---- vue (zoom / déplacement)
 const view = { x: 0, y: 0, s: 1 };
-const applyView = () => { world.position.set(view.x, view.y); world.scale.set(view.s); };
+const applyView = () => {
+  world.position.set(view.x, view.y); world.scale.set(view.s);
+  // la grille du tapis de coupe suit le zoom et le déplacement
+  const g = 50 * view.s, m = g < 10 ? g * 5 : g, st = $('stage').style;
+  st.backgroundSize = `${m * 5}px ${m * 5}px, ${m * 5}px ${m * 5}px, ${m}px ${m}px, ${m}px ${m}px`;
+  st.backgroundPosition = `${view.x}px ${view.y}px`;
+  $('zoom').textContent = Math.round(view.s * 100) + '%';
+};
 function fitView() {
   const r = app.screen; view.s = Math.min((r.width - 40) / PW, (r.height - 40) / PH);
   view.x = (r.width - PW * view.s) / 2; view.y = (r.height - PH * view.s) / 2; applyView();
 }
 fitView();
+app.renderer.on('resize', () => { if (!layers.length) fitView(); });
 const toWorld = (sx: number, sy: number): Pt => world.toLocal({ x: sx, y: sy });
 
 // ---- calques
@@ -158,7 +170,7 @@ async function importFile(f: File) {
 const importAll = async (fl: FileList | File[]) => { for (const f of Array.from(fl)) { if (/\.maxernzt$/i.test(f.name)) await loadProject(f); else if (f.type.startsWith('image/')) await importFile(f); } };
 $('btn-import').onclick = () => $<HTMLInputElement>('file').click();
 $<HTMLInputElement>('file').onchange = e => { const i = e.target as HTMLInputElement; importAll(i.files!); i.value = ''; };
-addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('drop'); });
+addEventListener('dragover', e => { e.preventDefault(); if (e.dataTransfer?.types.includes('Files')) document.body.classList.add('drop'); });
 addEventListener('dragleave', () => document.body.classList.remove('drop'));
 addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('drop'); if (e.dataTransfer) importAll(e.dataTransfer.files); });
 addEventListener('paste', e => { if (e.clipboardData) importAll(e.clipboardData.files); });
@@ -193,6 +205,7 @@ let tool: Tool = 'move';
 function setTool(t: Tool) {
   tool = tool === t ? 'move' : t;
   if (tool !== 'sam') samClear();
+  $('btn-select').classList.toggle('on', tool === 'move');
   $('btn-sam').classList.toggle('on', tool === 'sam');
   $('btn-scissors').classList.toggle('on', tool === 'scissors'); $('btn-tear').classList.toggle('on', tool === 'tear');
   app.canvas.style.cursor = tool === 'move' ? 'default' : 'crosshair';
@@ -203,6 +216,7 @@ $('btn-sam').onclick = async () => {
   if (tool !== 'sam' && !(await samAvailable())) return status('Modèles MobileSAM absents de public/models/ (voir README).');
   setTool('sam');
 };
+$('btn-select').onclick = () => { if (tool !== 'move') setTool(tool); };
 $('btn-scissors').onclick = () => setTool('scissors');
 $('btn-tear').onclick = () => setTool('tear');
 
@@ -309,6 +323,15 @@ $<HTMLInputElement>('border').oninput = e => { if (selected) { selected.border =
 $<HTMLInputElement>('shadow').oninput = e => { if (selected) { selected.shadow = +(e.target as HTMLInputElement).value; refresh(selected); commitSoon(); } };
 $<HTMLInputElement>('bg').oninput = e => { bgColor = (e.target as HTMLInputElement).value; drawPaper(); commitSoon(); };
 
+const textPop = $('textpop');
+function closeTextPop() { textPop.classList.remove('open'); $('btn-text').classList.remove('on'); }
+$('btn-text').onclick = () => {
+  const open = textPop.classList.toggle('open'); $('btn-text').classList.toggle('on', open);
+  if (open) { $<HTMLInputElement>('word').focus(); status('Tape un mot, Entrée pour composer.'); }
+};
+$('word').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-word').click(); else if (e.key === 'Escape') closeTextPop(); });
+$('empty').onclick = () => $<HTMLInputElement>('file').click();
+$('btn-fit').onclick = () => fitView();
 $('btn-word').onclick = () => {
   const word = $<HTMLInputElement>('word').value.trim(); if (!word) return;
   const chars = [...word].filter(c => c !== ' ');
@@ -322,7 +345,7 @@ $('btn-word').onclick = () => {
     addLayer(c, 'lettre-' + chars[i], { pos: { x: x + (c.width / 2) * sc, y: y + (Math.random() - 0.5) * 22 }, rot: (Math.random() - 0.5) * 0.35, scale: { x: sc, y: sc } });
     x += (c.width - 6) * sc;
   }
-  commit();
+  commit(); closeTextPop(); $<HTMLInputElement>('word').value = '';
   status(`Mot « ${word} » composé : chaque lettre est un calque indépendant.`);
 };
 
@@ -426,7 +449,7 @@ cv.addEventListener('pointermove', e => {
   const p = pos(e);
   if (pan) { view.x = pan.vx + p.x - pan.sx; view.y = pan.vy + p.y - pan.sy; applyView(); }
   else if (drag) { const w = toWorld(p.x, p.y); drag.l.box.position.set(w.x + drag.dx, w.y + drag.dy); }
-  else if (path) { path.push(p); pathG.clear().poly(path.flatMap(q => [q.x, q.y]), false).stroke({ width: 2, color: 0xffd23f }); }
+  else if (path) { path.push(p); { const f = path.flatMap(q => [q.x, q.y]); pathG.clear().poly(f, false).stroke({ width: 5, color: 0x000000, alpha: 0.55 }).poly(f, false).stroke({ width: 2.2, color: 0xffffff }); } }
 });
 const end = () => { if (drag) commit(); if (path) { const pp = path; path = null; pathG.clear(); finishPath(pp); } drag = null; pan = null; };
 cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
@@ -444,12 +467,24 @@ addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey) {
     const k = e.key.toLowerCase();
     if (k === 's') { e.preventDefault(); saveProject(); return; }
+    if (k === 'd' && selected) { e.preventDefault(); $('btn-dup').click(); return; }
     if (k === 'o') { e.preventDefault(); $<HTMLInputElement>('file-proj').click(); return; }
     if (t.tagName === 'INPUT' && t.type === 'text') return;
     if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); } else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
     return;
   }
   if (t.tagName === 'INPUT' && t.type === 'text') return;
+  const key = e.key.toLowerCase(), click = (id: string) => $(id).click();
+  if (key === 'v') { click('btn-select'); return; }
+  if (key === 'a') { click('btn-ai'); return; }
+  if (key === 'c') { click('btn-sam'); return; }
+  if (key === 'b') { click('btn-flat'); return; }
+  if (key === 'x') { click('btn-scissors'); return; }
+  if (key === 'r') { click('btn-tear'); return; }
+  if (key === 't') { e.preventDefault(); click('btn-text'); return; }
+  if (key === '0') { fitView(); return; }
+  if (key === ']') { click('btn-up'); return; }
+  if (key === '[') { click('btn-down'); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && selected) { removeLayer(selected); commit(); }
   if (e.key === 'Enter') samValidate();
   if (e.key === 'Escape') { samClear(); path = null; pathG.clear(); if (tool !== 'move') setTool(tool); }
@@ -458,11 +493,57 @@ addEventListener('keydown', e => {
 // ---- surcouche de sélection
 app.ticker.add(() => {
   selG.clear();
-  if (!selected) return;
-  const l = selected, w = l.baked.width, h = l.baked.height;
-  const q = [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }].map(c => l.box.toGlobal(c));
-  selG.poly(q.flatMap(c => [c.x, c.y])).stroke({ width: 1.5, color: 0xe8344a, alpha: 0.9 });
+  if (selected) {
+    const l = selected, w = l.baked.width, h = l.baked.height;
+    const q = [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }].map(c => l.box.toGlobal(c)).flatMap(c => [c.x, c.y]);
+    selG.poly(q).stroke({ width: 4, color: 0x000000, alpha: 0.5 }).poly(q).stroke({ width: 1.5, color: 0xffffff });
+  }
+  syncPanels();
 });
+
+// ---- panneaux : calques, valeurs, états
+let layersSig = '';
+const baseIds = new WeakMap<HTMLCanvasElement, number>(); let baseSeq = 0;
+const bid = (c: HTMLCanvasElement) => { let n = baseIds.get(c); if (!n) baseIds.set(c, n = ++baseSeq); return n; };
+const thumbs = new WeakMap<HTMLCanvasElement, string>();
+function thumbOf(c: HTMLCanvasElement) {
+  let u = thumbs.get(c);
+  if (!u) { const k = Math.min(1, 68 / c.width, 68 / c.height), t = makeCanvas(c.width * k, c.height * k); t.getContext('2d')!.drawImage(c, 0, 0, t.width, t.height); thumbs.set(c, u = t.toDataURL()); }
+  return u;
+}
+function reorder(from: number, to: number) {
+  if (from === to || from < 0 || from >= layers.length) return;
+  const [l] = layers.splice(from, 1); layers.splice(to, 0, l);
+  layers.forEach((x, k) => world.setChildIndex(x.box, k + 1)); commit();
+}
+function renderLayers() {
+  const list = $('layer-list'); list.innerHTML = '';
+  for (let i = layers.length - 1; i >= 0; i--) {
+    const l = layers[i], li = document.createElement('li');
+    li.className = 'ly' + (l === selected ? ' sel' : ''); li.draggable = true; li.tabIndex = 0; li.title = l.name;
+    li.innerHTML = '<span class="th"><img alt=""></span><span class="nm"></span>';
+    (li.querySelector('img') as HTMLImageElement).src = thumbOf(l.base); (li.querySelector('.nm') as HTMLElement).textContent = l.name;
+    li.onclick = () => select(l);
+    li.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(l); } };
+    li.ondragstart = e => { e.dataTransfer!.setData('text/plain', String(i)); e.dataTransfer!.effectAllowed = 'move'; li.classList.add('dragging'); };
+    li.ondragend = () => li.classList.remove('dragging');
+    li.ondragover = e => { e.preventDefault(); li.classList.add('over'); };
+    li.ondragleave = () => li.classList.remove('over');
+    li.ondrop = e => { e.preventDefault(); e.stopPropagation(); li.classList.remove('over'); reorder(+e.dataTransfer!.getData('text/plain'), i); };
+    list.appendChild(li);
+  }
+  $('lcount').textContent = String(layers.length);
+}
+function syncPanels() {
+  const sig = layers.map(l => l.id + ':' + l.name + ':' + bid(l.base) + (l === selected ? '*' : '')).join(',');
+  if (sig !== layersSig) { layersSig = sig; renderLayers(); }
+  $('empty').classList.toggle('gone', layers.length > 0);
+  $('opts').classList.toggle('nosel', !selected);
+  for (const [id, out] of [['border', 'v-border'], ['shadow', 'v-shadow'], ['tol', 'v-tol']]) {
+    const r = $<HTMLInputElement>(id), v = +r.value, mn = +r.min, mx = +r.max;
+    r.style.setProperty('--p', ((v - mn) / (mx - mn)) * 100 + '%'); $(out).textContent = String(v);
+  }
+}
 
 // accès console pour les tests
 (window as any).__app = { loadProject, saveProject, addLayer, layers, replaceBase, cutoutFlat, get selected() { return selected; } };
