@@ -32,6 +32,7 @@ Outil « Détourer au clic » : clic sur l'objet → aperçu ; Maj+clic ajoute u
 - Poignées sur le canvas pour tous les éléments : coins = taille proportionnelle, rond = rotation (Maj = pas de 15°)
 - Projet : enregistrer (Ctrl+S) / ouvrir (Ctrl+O, ou glisser un fichier `.maxernzt`) / nouveau ; avertissement si modifications non enregistrées
 - Annuler / rétablir (Ctrl+Z, Ctrl+Y ; 60 étapes) pour toutes les actions
+- Format de la feuille : 16/9 (1920×1080), carré (1080×1080) ou 9/16 (1080×1920, par défaut), au choix dans la barre d'options ; les éléments restent centrés, le format est annulable et enregistré dans le projet
 - Export PNG de la feuille, export des calques (PNG + `manifest.json` compatible Godot/animation)
 
 ## Animation

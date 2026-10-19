@@ -6,7 +6,7 @@ import { ACC_KINDS, ACC_COLORS, ACC_DEFAULTS, type AccCat, type AccKind, type Ac
 import { samAvailable, segment, forget, type SamPoint } from './sam';
 import { type Group, type Leaf, type Node, type TNode, isGroup, leavesOf, detach, attach, prune, topNode, lca, childOf, contains, serialize, buildTree } from './groups';
 
-const PW = 1000, PH = 1400; // taille de la feuille
+let PW = 1080, PH = 1920; // taille de la feuille : 9/16 par défaut (voir les formats dans la barre d'options)
 type Pt = { x: number; y: number };
 
 /** Trajectoire d'un élément ou d'un groupe : points relatifs au centre, durée en secondes. */
@@ -145,12 +145,12 @@ function hit(l: Layer, p: Pt): boolean {
 
 // ---- historique (annuler / rétablir) : instantanés légers, les canvas de base sont immuables
 interface LState { id: number; name: string; visible: boolean; anim?: Anim; acc?: AccSpec; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
-interface Snap { layers: LState[]; bg: string; tree: TNode[]; sel: number[] }
+interface Snap { layers: LState[]; bg: string; tree: TNode[]; sel: number[]; paper?: [number, number] }
 const snap = (): Snap => ({
   layers: layers.map(l => ({ id: l.id, name: l.name, visible: l.visible, anim: l.anim, acc: l.acc, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: restPose.get(l)?.x ?? l.box.x, y: restPose.get(l)?.y ?? l.box.y, rot: restPose.get(l)?.r ?? l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y })),
-  bg: bgColor, tree: serialize(root), sel: [...selection].filter(l => l !== selected).concat(selected ? [selected] : []).map(l => l.id),
+  paper: [PW, PH], bg: bgColor, tree: serialize(root), sel: [...selection].filter(l => l !== selected).concat(selected ? [selected] : []).map(l => l.id),
 });
-const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.layers.length === b.layers.length && JSON.stringify(a.tree) === JSON.stringify(b.tree) &&
+const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.paper?.join() === b.paper?.join() && a.layers.length === b.layers.length && JSON.stringify(a.tree) === JSON.stringify(b.tree) &&
   a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.visible === v.visible && u.anim === v.anim && u.acc === v.acc && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
 const hist: Snap[] = []; let hi = -1, soon = 0;
 function updHistUI() { ($('btn-undo') as HTMLButtonElement).disabled = hi <= 0; ($('btn-redo') as HTMLButtonElement).disabled = hi >= hist.length - 1; }
@@ -165,6 +165,7 @@ function commit() {
 const commitSoon = () => { clearTimeout(soon); soon = window.setTimeout(commit, 400); };
 function restore(s: Snap) {
   samClear();
+  if (s.paper && (s.paper[0] !== PW || s.paper[1] !== PH)) { PW = s.paper[0]; PH = s.paper[1]; drawPaper(); fitView(); syncFmt(); }
   const want = new Set(s.layers.map(x => x.id));
   for (const l of [...layers]) if (!want.has(l.id)) removeLayer(l);
   const byId = new Map(layers.map(l => [l.id, l]));
@@ -659,6 +660,20 @@ function openAccEdit(l: Layer) {
   status("Modification de l'accessoire en direct : un clic sur un autre modèle le remplace.");
 }
 
+// ---- format de la feuille : 16/9, carré, 9/16 (les éléments restent centrés)
+const FORMATS: [string, number, number][] = [['fmt-169', 1920, 1080], ['fmt-11', 1080, 1080], ['fmt-916', 1080, 1920]];
+function syncFmt() { for (const [id, w, h] of FORMATS) $(id).classList.toggle('on', w === PW && h === PH); }
+function setFormat(w: number, h: number) {
+  if (w === PW && h === PH) return;
+  stopPlay();
+  const dx = (w - PW) / 2, dy = (h - PH) / 2;
+  for (const l of layers) l.box.position.set(l.box.x + dx, l.box.y + dy);
+  PW = w; PH = h; drawPaper(); fitView(); syncFmt(); commit();
+  status(`Format ${w}×${h}.`);
+}
+for (const [id, w, h] of FORMATS) $(id).onclick = () => setFormat(w, h);
+syncFmt();
+
 // ---- export
 function extractPaper(): HTMLCanvasElement {
   const save = { ...view };
@@ -747,7 +762,7 @@ async function loadProject(f: File) {
     for (const [id, url] of Object.entries<string>(d.images)) imgs.set(id, await decode(url));
     const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, anim: l.anim, acc: l.acc, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
-    restore({ layers: ls, bg: d.bg ?? bgColor, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
+    restore({ paper: Array.isArray(d.paper) && d.paper.length === 2 ? [d.paper[0], d.paper[1]] : undefined, layers: ls, bg: d.bg ?? bgColor, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); commit(); dirty = false;
     status(`Projet « ${projectName} » ouvert (${ls.length} calques).`);
   } catch (e) { status('Ouverture impossible : ' + (e as Error).message); }
