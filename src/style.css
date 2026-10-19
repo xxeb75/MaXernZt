@@ -213,3 +213,9 @@ input.num:focus { outline: none; border-color: var(--accent); background: #0f111
 #accpop .tp-row { align-items: center; }
 #accpop[data-cat="tape"] #acc-size-row { display: none; }
 #accpop:not([data-cat="tape"]) #acc-len-row { display: none; }
+
+/* boutons d'action dans les lignes du panneau */
+.ly .rb { display: grid; place-items: center; width: 26px; height: 26px; flex: none; border-radius: 5px; color: var(--dim); opacity: 0; }
+.ly:hover .rb, .ly:focus-within .rb { opacity: 1; }
+.ly .rb .ic { width: 16px; height: 16px; }
+.ly .rb:hover { background: rgba(255,255,255,.1); color: var(--text); }

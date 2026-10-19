@@ -407,8 +407,9 @@ function cloneNode(n: Node, parent: Group, dx: number, dy: number, out: Layer[])
   nl.letter = l.letter; nl.visible = l.visible; nl.anim = l.anim; nl.acc = l.acc; detach(nl); attach(nl, parent); out.push(nl);
   return nl;
 }
-$('btn-dup').onclick = () => {
-  const nodes = selectedNodes(); if (!nodes.length) { status('Sélectionne un calque.'); return; }
+/** Duplique des éléments ou des groupes (la copie, décalée, se place juste au-dessus de l'original et devient la sélection). */
+function dupNodes(nodes: Node[]) {
+  if (!nodes.length) { status('Sélectionne un calque.'); return; }
   const fresh: Layer[] = [];
   for (const n of nodes) {
     const tmp: Group = { id: -1, name: '', collapsed: false, visible: true, children: [], parent: null };
@@ -418,7 +419,8 @@ $('btn-dup').onclick = () => {
     const p = n.parent!; attach(copy, p, p.children.indexOf(n) + 1);
   }
   reflow(); setSelection(fresh); commit();
-};
+}
+$('btn-dup').onclick = () => dupNodes(selectedNodes());
 
 /** Centre de la sélection en coordonnées monde (calque seul : son centre ; sinon centre de la boîte englobante). */
 function selCenterWorld(): Pt {
@@ -1002,9 +1004,10 @@ function rename(n: Layer | Group) {
   if (v && v.trim()) { n.name = v.trim(); commit(); }
 }
 function eyeBtn(n: Node): string {
-  return `<button class="eye${visOf(n) ? '' : ' off'}" tabindex="-1" aria-label="Afficher / masquer"><svg class="ic"><use href="#i-${visOf(n) ? 'eye' : 'eye-off'}"/></svg></button>`;
+  return `<button class="rb dup" tabindex="-1" aria-label="Dupliquer" title="Dupliquer"><svg class="ic"><use href="#i-dup"/></svg></button><button class="eye${visOf(n) ? '' : ' off'}" tabindex="-1" aria-label="Afficher / masquer"><svg class="ic"><use href="#i-${visOf(n) ? 'eye' : 'eye-off'}"/></svg></button>`;
 }
 function wireEye(li: HTMLElement, n: Node) {
+  (li.querySelector('.dup') as HTMLElement).onclick = e => { e.stopPropagation(); dupNodes([n]); };
   (li.querySelector('.eye') as HTMLElement).onclick = e => {
     e.stopPropagation();
     if (isGroup(n)) n.visible = !n.visible; else (n as Layer).visible = !(n as Layer).visible;
