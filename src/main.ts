@@ -583,8 +583,9 @@ function extractPaper(): HTMLCanvasElement {
 }
 function download(blob: Blob | null, name: string) {
   if (!blob) return;
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.style.display = 'none';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(a.href); }, 120000); // un gros fichier ne doit pas perdre son URL en cours de téléchargement
 }
 $('btn-export').onclick = () => extractPaper().toBlob(b => download(b, 'collage.png'));
 $('btn-export-layers').onclick = async () => {
@@ -619,22 +620,39 @@ async function saveProject() {
     return { id: l.id, name: l.name, visible: l.visible, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
   });
   const blob = new Blob([JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, tree: serialize(root), layers: out, images })], { type: 'application/json' });
+  const fileName = projectName + '.maxernzt';
   try {
     const w = window as any;
+    let ok = false;
     if (w.showSaveFilePicker) {
-      const h = await w.showSaveFilePicker({ suggestedName: projectName + '.maxernzt', types: [{ description: 'Projet MaXernZt', accept: { 'application/json': ['.maxernzt'] } }] });
-      const ws = await h.createWritable(); await ws.write(blob); await ws.close();
-      projectName = String(h.name).replace(/\.maxernzt$/i, '');
-    } else download(blob, projectName + '.maxernzt');
-    dirty = false; status(`Projet enregistré (${layers.length} calques).`);
-  } catch (e) { if ((e as Error).name !== 'AbortError') status("Erreur d'enregistrement : " + (e as Error).message); }
+      const h = await w.showSaveFilePicker({ suggestedName: fileName, types: [{ description: 'Projet MaXernZt', accept: { 'application/json': ['.maxernzt'] } }] });
+      try {
+        const ws = await h.createWritable(); await ws.write(blob); await ws.close();
+        const written = (await h.getFile()).size;       // le fichier choisi existe déjà : on vérifie qu'il est bien rempli
+        if (written !== blob.size) throw new Error(`${written} octets écrits sur ${blob.size}`);
+        projectName = String(h.name).replace(/\.maxernzt$/i, ''); ok = true;
+      } catch (err) {
+        console.error('enregistrement direct impossible', err);
+        status("Écriture directe impossible (" + (err as Error).message + ") : téléchargement du fichier à la place.");
+      }
+    }
+    if (!ok) download(blob, fileName);
+    dirty = false;
+    if (ok) status(`Projet enregistré (${layers.length} calques, ${(blob.size / 1e6).toFixed(1)} Mo).`);
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') return;
+    console.error(e); status("Erreur d'enregistrement : " + (e as Error).message);
+    alert("Enregistrement impossible : " + (e as Error).message);
+  }
 }
 const decode = (url: string) => new Promise<HTMLCanvasElement>((res, rej) => {
   const im = new Image(); im.onload = () => { const c = makeCanvas(im.width, im.height); c.getContext('2d')!.drawImage(im, 0, 0); res(c); }; im.onerror = () => rej(new Error('image illisible')); im.src = url;
 });
 async function loadProject(f: File) {
   try {
-    const d = JSON.parse(await f.text());
+    const txt = await f.text();
+    if (!txt.trim()) throw new Error('le fichier est vide (enregistrement interrompu)');
+    const d = JSON.parse(txt);
     if (d.format !== 'maxernzt' || !Array.isArray(d.layers)) throw new Error('fichier non reconnu');
     const imgs = new Map<string, HTMLCanvasElement>();
     for (const [id, url] of Object.entries<string>(d.images)) imgs.set(id, await decode(url));
