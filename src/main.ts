@@ -24,6 +24,17 @@ interface Layer extends Leaf {
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = (s: string) => ($('status').textContent = s);
+const fmtSize = (b: number) => (b < 1e6 ? Math.max(1, Math.round(b / 1024)) + ' Ko' : (b / 1e6).toFixed(1) + ' Mo');
+/** Notification visible, qui s'efface seule : ok (vert), warn (jaune) ou err (rouge, plus longue). */
+function toast(title: string, detail = '', kind: 'ok' | 'warn' | 'err' = 'ok', ms = kind === 'err' ? 9000 : 4200) {
+  const box = document.getElementById('toasts'); if (!box) return;
+  const t = document.createElement('div'); t.className = 'toast ' + kind; t.setAttribute('role', kind === 'err' ? 'alert' : 'status');
+  t.innerHTML = `<svg class="ic"><use href="#i-${kind === 'ok' ? 'check' : 'alert'}"/></svg><div><b></b><span></span></div>`;
+  (t.querySelector('b') as HTMLElement).textContent = title; (t.querySelector('span') as HTMLElement).textContent = detail;
+  t.onclick = () => t.remove(); box.appendChild(t);
+  while (box.children.length > 3) box.firstElementChild!.remove();
+  setTimeout(() => t.classList.add('out'), ms - 300); setTimeout(() => t.remove(), ms);
+}
 
 const app = new Application();
 await app.init({ resizeTo: $('stage'), backgroundAlpha: 0, antialias: true, resolution: window.devicePixelRatio, autoDensity: true });
@@ -741,11 +752,14 @@ async function saveProject() {
     }
     if (!ok) download(blob, fileName);
     dirty = false;
-    if (ok) status(`Projet enregistré (${layers.length} calques, ${(blob.size / 1e6).toFixed(1)} Mo).`);
+    const info = `${ok ? projectName + '.maxernzt' : fileName} — ${layers.length} calques, ${fmtSize(blob.size)}`, hhmm = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    $('btn-save').dataset.tip = `Enregistrer (Ctrl+S) — dernier : ${hhmm}`;
+    if (ok) { status(`Projet enregistré (${info}).`); toast('Projet enregistré', info, 'ok'); }
+    else { status('Projet téléchargé : ' + fileName); toast('Projet téléchargé', `${fileName} est dans ton dossier Téléchargements (${fmtSize(blob.size)})`, 'warn'); }
   } catch (e) {
     if ((e as Error).name === 'AbortError') return;
     console.error(e); status("Erreur d'enregistrement : " + (e as Error).message);
-    alert("Enregistrement impossible : " + (e as Error).message);
+    toast("Enregistrement impossible", (e as Error).message, 'err');
   }
 }
 const decode = (url: string) => new Promise<HTMLCanvasElement>((res, rej) => {
@@ -764,8 +778,8 @@ async function loadProject(f: File) {
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
     restore({ paper: Array.isArray(d.paper) && d.paper.length === 2 ? [d.paper[0], d.paper[1]] : undefined, layers: ls, bg: d.bg ?? bgColor, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); commit(); dirty = false;
-    status(`Projet « ${projectName} » ouvert (${ls.length} calques).`);
-  } catch (e) { status('Ouverture impossible : ' + (e as Error).message); }
+    status(`Projet « ${projectName} » ouvert (${ls.length} calques).`); toast('Projet ouvert', `${projectName} — ${ls.length} calques`, 'ok');
+  } catch (e) { status('Ouverture impossible : ' + (e as Error).message); toast('Ouverture impossible', (e as Error).message, 'err'); }
 }
 $('btn-save').onclick = saveProject;
 $('btn-open').onclick = () => $<HTMLInputElement>('file-proj').click();
@@ -1083,6 +1097,7 @@ function syncPanels() {
   if (sig !== layersSig) { layersSig = sig; renderLayers(); }
   $('empty').classList.toggle('gone', layers.length > 0);
   $('opts').classList.toggle('nosel', !selection.size);
+  $('btn-save').classList.toggle('dirty', dirty && layers.length > 0);   // pastille : modifications non enregistrées
   syncAnimBar();
   for (const [id, out] of [['border', 'v-border'], ['rough', 'v-rough'], ['shadow', 'v-shadow'], ['tol', 'v-tol']]) {
     const r = $<HTMLInputElement>(id), v = +r.value, mn = +r.min, mx = +r.max;
