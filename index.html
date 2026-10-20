@@ -59,6 +59,8 @@
   <symbol id="i-ease-smooth" viewBox="0 0 24 24"><path d="M4 19.5h16M4 19.5V4"/><path d="M6 17.5C12 17.5 12 6 18.5 6"/></symbol>
   <symbol id="i-orient" viewBox="0 0 24 24"><path d="M12 3.5L19 20l-7-3.6L5 20z"/></symbol>
   <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6.2" y="5.5" width="4" height="13" rx="1" fill="currentColor"/><rect x="13.8" y="5.5" width="4" height="13" rx="1" fill="currentColor"/></symbol>
+  <symbol id="i-kprev" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/><path d="M19 12l-2.2-2.6L14.6 12l2.2 2.6z" fill="currentColor"/></symbol>
+  <symbol id="i-knext" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/><path d="M5 12l2.2-2.6L9.4 12l-2.2 2.6z" fill="currentColor"/></symbol>
   <symbol id="i-key" viewBox="0 0 24 24"><path d="M12 3.8l7 8.2-7 8.2-7-8.2z"/><path d="M12 9v6M9 12h6"/></symbol>
   <symbol id="i-hold" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M10 8.5v7M14 8.5v7"/></symbol>
   <symbol id="i-spin" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.4-5.5"/><path d="M19.8 4v4.6h-4.6"/></symbol>
@@ -214,6 +216,8 @@
     <button id="btn-play" class="ib play" data-tip="Lecture / pause (Espace)" data-pos="top"><svg class="ic"><use href="#i-play"/></svg></button>
     <button id="btn-stop" class="ib" data-tip="Arrêter (Échap)" data-pos="top" disabled><svg class="ic"><use href="#i-stop"/></svg></button>
     <label class="ctl" data-tip="Instant de la tête de lecture" data-pos="top"><svg class="ic"><use href="#i-clock"/></svg><input id="tl-now" class="num" type="text" inputmode="decimal" spellcheck="false" autocomplete="off" value="0.00 s"></label>
+    <button id="btn-kprev" class="ib" data-tip="Image clé précédente (Alt+←)" data-pos="top"><svg class="ic"><use href="#i-kprev"/></svg></button>
+    <button id="btn-knext" class="ib" data-tip="Image clé suivante (Alt+→)" data-pos="top"><svg class="ic"><use href="#i-knext"/></svg></button>
     <button id="btn-rec" class="ib rec" data-tip="Enregistrement automatique : en pause, déplace, tourne ou agrandis l'élément pour créer des images clés" data-pos="top"><svg class="ic"><use href="#i-rec"/></svg></button>
     <button id="btn-tlkey" class="ib keyadd" data-tip="Image clé de pose (position, rotation, taille) à cet instant" data-pos="top"><svg class="ic"><use href="#i-key"/></svg></button>
     <div id="kf-ed" data-prop="pos">

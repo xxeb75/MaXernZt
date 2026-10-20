@@ -1108,6 +1108,7 @@ addEventListener('keydown', e => {
     if (k === 'd' && selection.size) { e.preventDefault(); $('btn-dup').click(); return; }
     if (k === 'o') { e.preventDefault(); $('btn-open').click(); return; }
     if (typing) return;
+  if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); jumpKey(e.key === 'ArrowRight' ? 1 : -1); return; }
     if (k === 'g') { e.preventDefault(); (e.shiftKey ? ungroupSelection : groupSelection)(); return; }
     if (k === 'a') { e.preventDefault(); setSelection([...layers]); return; }
     if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); } else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
@@ -1960,6 +1961,18 @@ $('btn-rec').onclick = () => {
   if (recording) { if (playing && !paused) pausePlay(); else if (!playing) playheadTo(animT); status("Enregistrement : place la tête de lecture, puis déplace, tourne ou agrandis l'élément : les images clés se créent seules."); }
   else status('Enregistrement arrêté.');
 };
+/** Saute à l'image clé précédente / suivante de la sélection (de tous les éléments si rien n'est sélectionné). */
+function jumpKey(dir: 1 | -1) {
+  const ns = selectedNodes(), set = new Set<number>();
+  const add = (n: Node) => { for (const t of nodeKeyTimes(n)) set.add(t); };
+  if (ns.length) ns.forEach(add); else { layers.forEach(add); const w = (g: Group) => { for (const c of g.children) if (isGroup(c)) { add(c); w(c); } }; w(root); }
+  const eps = 0.005, t = animT;
+  const to = [...set].sort((a, b) => a - b).filter(k => (dir > 0 ? k > t + eps : k < t - eps));
+  if (!to.length) { status(dir > 0 ? "Pas d'image clé après." : "Pas d'image clé avant."); return; }
+  playheadTo(dir > 0 ? to[0] : to[to.length - 1]);
+}
+$('btn-kprev').onclick = () => jumpKey(-1);
+$('btn-knext').onclick = () => jumpKey(1);
 $('btn-tlkey').onclick = () => {
   const ns = selectedNodes(); if (!ns.length) { status("Sélectionne d'abord un élément ou un groupe."); return; }
   if (!playing) playheadTo(animT); else if (!paused) pausePlay();
