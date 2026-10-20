@@ -82,6 +82,10 @@
   <symbol id="i-sat" viewBox="0 0 24 24"><path d="M12 3.5s6 6.2 6 10.6a6 6 0 0 1-12 0C6 9.7 12 3.5 12 3.5z"/><path d="M12 3.5v16.6" opacity=".5"/></symbol>
   <symbol id="i-hue" viewBox="0 0 24 24"><circle cx="9.5" cy="9.5" r="5.5"/><circle cx="14.5" cy="9.5" r="5.5"/><circle cx="12" cy="14.5" r="5.5"/></symbol>
   <symbol id="i-blur" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="currentColor"/><circle cx="12" cy="12" r="6.5" opacity=".6"/><circle cx="12" cy="12" r="9.5" opacity=".3"/></symbol>
+  <symbol id="i-ptex" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.6"/><path d="M4 9.5l5.5-5.5M4 15l11-11M4.8 20L20 4.8M10 20l10-10M15.5 20l4.5-4.5"/></symbol>
+  <symbol id="i-bank" viewBox="0 0 24 24"><rect x="3.5" y="7.5" width="13" height="13" rx="2"/><path d="M7 7.5V6A1.8 1.8 0 0 1 8.8 4.2H18A1.8 1.8 0 0 1 19.8 6v9.2A1.8 1.8 0 0 1 18 17h-1.5"/><circle cx="8.3" cy="12.3" r="1.3"/><path d="M4 19l4.6-4 3.4 3 2-1.7 2.5 2.7"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.3l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.7l-5.2 2.8 1-5.9L3.5 9.5l5.9-.8z"/></symbol>
+  <symbol id="i-bankadd" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M12 8.5v7M8.5 12h7"/></symbol>
   <symbol id="i-key" viewBox="0 0 24 24"><path d="M12 3.8l7 8.2-7 8.2-7-8.2z"/><path d="M12 9v6M9 12h6"/></symbol>
   <symbol id="i-hold" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M10 8.5v7M14 8.5v7"/></symbol>
   <symbol id="i-spin" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.4-5.5"/><path d="M19.8 4v4.6h-4.6"/></symbol>
@@ -163,6 +167,7 @@
     <button id="fmt-916" class="ib" data-tip="Format 9/16 (1080×1920)" data-pos="bottom-left"><svg class="ic"><use href="#i-fmt-916"/></svg></button>
   </div>
   <div class="grp">
+    <button id="btn-ptex" class="ib" data-tip="Texture du papier de fond : kraft, carton, journal, cahier, froissé…" data-pos="bottom-left"><svg class="ic"><use href="#i-ptex"/></svg></button>
     <label class="ctl swatch" data-tip="Couleur de la feuille" data-pos="bottom-left"><svg class="ic"><use href="#i-drop"/></svg><input id="bg" type="color" value="#cfe8e6"></label>
     <button id="btn-snap" class="ib on" data-tip="Aimantation : bords et centres collés à la feuille et aux autres éléments, rotation par crans de 15° (Alt : l'ignorer le temps du geste)" data-pos="bottom-left"><svg class="ic"><use href="#i-snap"/></svg></button>
     <button id="btn-fit" class="ib" data-tip="Tout voir (0)" data-pos="bottom-left"><svg class="ic"><use href="#i-fit"/></svg></button>
@@ -185,6 +190,19 @@
   <hr>
   <button id="btn-acc" class="tb" data-tip="Accessoires : scotch, peinture, punaises (E)" data-pos="right"><svg class="ic"><use href="#i-acc"/></svg></button>
   <button id="btn-text" class="tb" data-tip="Lettres découpées (T)" data-pos="right"><svg class="ic"><use href="#i-letter"/></svg></button>
+  <button id="btn-bank" class="tb" data-tip="Banque d'images prédécoupées : formes et ma banque" data-pos="right"><svg class="ic"><use href="#i-bank"/></svg></button>
+  <div id="bankpop">
+    <div class="seg" id="bank-tabs">
+      <button class="ib on" data-tab="shapes" data-tip="Formes prêtes à l'emploi" data-pos="top"><svg class="ic"><use href="#i-star"/></svg></button>
+      <button class="ib" data-tab="mine" data-tip="Ma banque (enregistrée sur cet ordinateur)" data-pos="top"><svg class="ic"><use href="#i-bank"/></svg></button>
+    </div>
+    <div id="bank-grid"></div>
+    <div id="bank-empty">Ta banque est vide : ajoute la sélection ou importe des images détourées (PNG).</div>
+    <div id="bank-actions">
+      <button id="bank-add" class="ib" data-tip="Ajouter la sélection à ma banque" data-pos="top"><svg class="ic"><use href="#i-bankadd"/></svg></button>
+      <button id="bank-imp" class="ib" data-tip="Importer des images dans ma banque" data-pos="top"><svg class="ic"><use href="#i-import"/></svg></button>
+    </div>
+  </div>
   <div id="accpop" data-cat="tape">
     <div class="seg" id="acc-cats">
       <button class="ib on" data-cat="tape" data-tip="Scotch et rubans" data-pos="top"><svg class="ic"><use href="#i-tape"/></svg></button>
@@ -246,6 +264,11 @@
     <button id="fl-reset" class="ib" data-tip="Tout remettre à zéro" data-pos="top"><svg class="ic"><use href="#i-undo"/></svg></button>
   </div>
 </div>
+<div id="ptpop">
+  <div id="pt-grid"></div>
+  <label class="ctl" data-tip="Intensité de la texture" data-pos="top"><svg class="ic"><use href="#i-contrast"/></svg><input id="pt-amt" type="range" min="0" max="100" value="70"><output id="v-pt-amt"></output></label>
+</div>
+<div id="restore"><svg class="ic"><use href="#i-save"/></svg><span id="restore-txt"></span><button id="restore-yes" class="go">Restaurer</button><button id="restore-no" class="ib" data-tip="Ignorer et supprimer le brouillon" data-pos="bottom"><svg class="ic"><use href="#i-trash"/></svg></button></div>
 <div id="fxpop">
   <div id="fx-grid"></div>
   <label class="ctl" data-tip="Durée de l'effet" data-pos="top"><svg class="ic"><use href="#i-clock"/></svg><input id="fx-dur" type="range" min="0.3" max="3" step="0.1" value="1"><output id="v-fx-dur"></output></label>
@@ -310,8 +333,9 @@
 
 <div id="toasts" aria-live="polite"></div>
 
-<footer id="foot"><span id="status"></span></footer>
+<footer id="foot"><span id="status"></span><span id="autosv"></span></footer>
 
+<input id="file-bank" type="file" accept="image/*" multiple hidden>
 <input id="file" type="file" accept="image/*" multiple hidden>
 <input id="file-proj" type="file" accept=".maxernzt,application/json" hidden>
 <script type="module" src="/src/main.ts"></script>

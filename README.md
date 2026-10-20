@@ -66,6 +66,12 @@ Panneau en bas, que l'on étire vers le haut en tirant sa poignée (double-clic 
 
 Icône palette dans la barre d'options (pour la sélection) : réglages rapides en un clic (noir et blanc, sépia, vieilli, photocopie, pop saturé, froid, négatif), puis luminosité, contraste, saturation, rotation de teinte, flou et voile coloré (couleur + intensité), avec retour à zéro. Les effets s'appliquent à l'image avant le contour : le bord blanc « papier » reste blanc ; ils sont annulables, enregistrés dans le projet, conservés par la duplication, et présents dans les exports PNG et vidéo.
 
+## Textures de fond, banque d'images, enregistrement automatique
+
+- **Texture du papier** (icône hachures, barre d'options) : lisse, papier grainé, kraft, carton, papier journal, cahier à carreaux, cahier à lignes, papier froissé, avec un curseur d'intensité. Choisir un papier propose aussi sa couleur de feuille (modifiable ensuite). Enregistrée dans le projet, annulable, visible dans les exports.
+- **Banque d'images prédécoupées** (icône album, barre d'outils) : onglet *Formes* (étoile, cœur, flèche, éclair, explosion, bulle, disque, cible, croix, triangle, nuage, lune, bande de papier), insérées d'un clic comme éléments détourés ; onglet *Ma banque* : ajoute la sélection (avec ses effets de couleur) ou importe des PNG détourés ; elle est conservée sur l'ordinateur (IndexedDB) entre les sessions, et un clic insère l'image.
+- **Enregistrement automatique** : toutes les 20 s (et quand la fenêtre passe en arrière-plan) un brouillon est gardé sur l'ordinateur tant qu'il y a des modifications non enregistrées (indication en bas à droite). Au lancement suivant, un bandeau propose de le restaurer ou de le supprimer ; un enregistrement normal efface le brouillon.
+
 ## Animation
 
 Outil trajectoire (P) : sélectionne un élément (ou un groupe dans le panneau), dessine le chemin à partir de lui ; le chemin est enregistré avec l'élément ou le groupe (les chemins s'additionnent le long de la hiérarchie). ▶ / Espace = lecture et pause, ■ / Échap = arrêt. Réglages : durée, boucle ou aller-retour, vitesse constante ou douce, orienter dans le sens du trajet, rotation continue (nombre de tours sur lui-même par cycle, négatif = sens inverse) ; le bouton flèche circulaire à gauche de la barre du bas fait tourner un élément ou un groupe sur place, sans trajectoire.

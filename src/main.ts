@@ -5,6 +5,8 @@ import { makeSeparate, makeGrouped, makeOne, FONTS, PALETTES, type LetterOpts, t
 import { ACC_KINDS, ACC_COLORS, ACC_DEFAULTS, type AccCat, type AccKind, type AccParams } from './accessories';
 import { encodeVideo, videoSupported } from './video';
 import { samAvailable, segment, forget, type SamPoint } from './sam';
+import { type PaperKind, PAPERS, renderPaperOverlay } from './paper';
+import { SHAPES, makeShape, bankList, bankAdd, bankRemove, bankCanvas, kvGet, kvPut, kvDel, type BankItem } from './bank';
 import { type LayerFx, FX0, FX_PRESETS, fxNeutral, applyLayerFx } from './filters';
 import { type Group, type Leaf, type Node, type TNode, isGroup, leavesOf, detach, attach, prune, topNode, lca, childOf, contains, serialize, buildTree } from './groups';
 
@@ -66,14 +68,22 @@ const paper = new Graphics();
 const ui = new Container(); // surcouche (sélection, tracés) en coordonnées écran
 const selG = new Graphics(), pathG = new Graphics(), animG = new Graphics();
 ui.addChild(animG, selG, pathG);
-world.addChild(paper);
+const paperBox = new Container(), paperFx = new Sprite(Texture.EMPTY);   // feuille + texture de papier
+paperBox.addChild(paper, paperFx);
+world.addChild(paperBox);
 app.stage.addChild(world, ui);
 
-let bgColor = '#cfe8e6';
+let bgColor = '#cfe8e6', paperKind: PaperKind = 'none', paperAmt = 70, paperFxKey = '';
 const drawPaper = () => {
   paper.clear();
   for (let i = 8; i >= 1; i--) paper.roundRect(-i * 1.5, 6 - i * 1.5, PW + i * 3, PH + i * 3, 3).fill({ color: 0x000000, alpha: 0.04 });
   paper.rect(0, 0, PW, PH).fill(bgColor);
+  const key = paperKind + '|' + PW + '|' + PH;
+  if (key !== paperFxKey) {
+    paperFxKey = key; const old = paperFx.texture, c = renderPaperOverlay(paperKind, PW, PH);
+    paperFx.texture = c ? Texture.from(c) : Texture.EMPTY; if (old !== Texture.EMPTY) old.destroy(true);
+  }
+  paperFx.visible = paperKind !== 'none'; paperFx.alpha = paperAmt / 100;
 };
 drawPaper();
 
@@ -186,14 +196,14 @@ function hit(l: Layer, p: Pt): boolean {
 
 // ---- historique (annuler / rétablir) : instantanés légers, les canvas de base sont immuables
 interface LState { id: number; name: string; visible: boolean; locked?: boolean; fx?: LayerFx; anim?: Anim; tl?: TL; acc?: AccSpec; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
-interface Snap { layers: LState[]; bg: string; tree: TNode[]; sel: number[]; paper?: [number, number]; dur?: number | null }
+interface Snap { layers: LState[]; bg: string; pk?: PaperKind; pa?: number; tree: TNode[]; sel: number[]; paper?: [number, number]; dur?: number | null }
 const snap = (): Snap => ({
   layers: layers.map(l => ({ id: l.id, name: l.name, visible: l.visible, locked: l.locked, fx: l.fx, anim: l.anim, tl: l.tl, acc: l.acc, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: restPose.get(l)?.x ?? l.box.x, y: restPose.get(l)?.y ?? l.box.y, rot: restPose.get(l)?.r ?? l.box.rotation, sx: restPose.get(l)?.sx ?? l.box.scale.x, sy: restPose.get(l)?.sy ?? l.box.scale.y })),
-  paper: [PW, PH], dur: tlDurManual, bg: bgColor, tree: serialize(root), sel: [...selection].filter(l => l !== selected).concat(selected ? [selected] : []).map(l => l.id),
+  paper: [PW, PH], dur: tlDurManual, bg: bgColor, pk: paperKind, pa: paperAmt, tree: serialize(root), sel: [...selection].filter(l => l !== selected).concat(selected ? [selected] : []).map(l => l.id),
 });
-const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.paper?.join() === b.paper?.join() && a.dur === b.dur && a.layers.length === b.layers.length && JSON.stringify(a.tree) === JSON.stringify(b.tree) &&
+const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.pk === b.pk && a.pa === b.pa && a.paper?.join() === b.paper?.join() && a.dur === b.dur && a.layers.length === b.layers.length && JSON.stringify(a.tree) === JSON.stringify(b.tree) &&
   a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.visible === v.visible && u.locked === v.locked && u.fx === v.fx && u.anim === v.anim && u.tl === v.tl && u.acc === v.acc && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
-const hist: Snap[] = []; let hi = -1, soon = 0;
+const hist: Snap[] = []; let hi = -1, soon = 0, rev = 0;
 function updHistUI() { ($('btn-undo') as HTMLButtonElement).disabled = hi <= 0; ($('btn-redo') as HTMLButtonElement).disabled = hi >= hist.length - 1; }
 function commit() {
   clearTimeout(soon);
@@ -201,7 +211,7 @@ function commit() {
   if (hi >= 0 && sameSnap(hist[hi], s)) return;
   hist.length = hi + 1; hist.push(s);
   if (hist.length > 60) hist.shift();
-  hi = hist.length - 1; dirty = true; updHistUI();
+  hi = hist.length - 1; dirty = true; rev++; updHistUI();
 }
 const commitSoon = () => { clearTimeout(soon); soon = window.setTimeout(commit, 400); };
 function restore(s: Snap) {
@@ -230,7 +240,7 @@ function restore(s: Snap) {
   buildTree(s.tree, root, id => byId2.get(id), (id, name, collapsed, visible, anim, tl, locked) => { groupSeq = Math.max(groupSeq, id + 1); return { id, name, collapsed, visible, locked: locked || undefined, anim, tl, children: [], parent: root }; });
   for (const l of ordered) if (!l.parent || !hasAncestorRoot(l)) attach(l, root);
   reflow();
-  bgColor = s.bg; drawPaper(); $<HTMLInputElement>('bg').value = bgColor;
+  bgColor = s.bg; paperKind = s.pk ?? 'none'; paperAmt = s.pa ?? 70; drawPaper(); $<HTMLInputElement>('bg').value = bgColor; syncPaperUI();
   const sl = s.sel.map(id => byId2.get(id)).filter((x): x is Layer => !!x);
   setSelection(sl, sl[sl.length - 1]);
 }
@@ -560,6 +570,102 @@ $('btn-filter').onclick = e => {
   syncFlPop(); flPop.classList.add('open'); $('btn-filter').classList.add('on');
 };
 addEventListener('pointerdown', e => { if (flPop.classList.contains('open') && !flPop.contains(e.target as HTMLElement) && !(e.target as HTMLElement).closest('#btn-filter')) { closeFlPop(); commit(); } });
+
+// ---- texture de papier de la feuille
+const ptPop = $('ptpop');
+function syncPaperUI() {
+  $('btn-ptex').classList.toggle('on', paperKind !== 'none');
+  $('ptpop').querySelectorAll<HTMLElement>('.ptc').forEach(b => b.classList.toggle('on', b.dataset.kind === paperKind));
+  const r = $<HTMLInputElement>('pt-amt'); r.value = String(paperAmt); r.style.setProperty('--p', paperAmt + '%'); $('v-pt-amt').textContent = paperAmt + ' %';
+}
+for (const p of PAPERS) {
+  const b = document.createElement('button'); b.className = 'ptc'; b.dataset.kind = p.id; b.dataset.tip = p.name; b.dataset.pos = 'top';
+  const cv = document.createElement('canvas'); cv.width = 72; cv.height = 48; const x = cv.getContext('2d')!;
+  x.fillStyle = p.bg ?? '#cfe8e6'; x.fillRect(0, 0, 72, 48);
+  const ov = renderPaperOverlay(p.id, 72, 48, 0.4); if (ov) x.drawImage(ov, 0, 0);
+  b.appendChild(cv);
+  b.onclick = () => {
+    paperKind = p.id; if (p.bg) { bgColor = p.bg; $<HTMLInputElement>('bg').value = bgColor; }
+    drawPaper(); syncPaperUI(); commit(); status(`Fond : ${p.name}.`);
+  };
+  $('pt-grid').appendChild(b);
+}
+$<HTMLInputElement>('pt-amt').oninput = e => { paperAmt = +(e.target as HTMLInputElement).value; drawPaper(); syncPaperUI(); commitSoon(); };
+function closePtPop() { ptPop.classList.remove('open'); }
+$('btn-ptex').onclick = e => {
+  e.stopPropagation();
+  if (ptPop.classList.contains('open')) { closePtPop(); return; }
+  const r = $('btn-ptex').getBoundingClientRect();
+  ptPop.style.left = Math.max(8, Math.min(r.left - 120, innerWidth - 292)) + 'px'; ptPop.style.top = r.bottom + 8 + 'px';
+  syncPaperUI(); ptPop.classList.add('open');
+};
+addEventListener('pointerdown', e => { if (ptPop.classList.contains('open') && !ptPop.contains(e.target as HTMLElement) && !(e.target as HTMLElement).closest('#btn-ptex')) closePtPop(); });
+syncPaperUI();
+
+// ---- banque d'images prédécoupées : formes prêtes à l'emploi + ma banque (enregistrée sur l'appareil)
+const bankPop = $('bankpop');
+let bankTab: 'shapes' | 'mine' = 'shapes';
+function insertCut(c: HTMLCanvasElement, name: string) {
+  const t = trim(c); if (t) c = t.canvas;
+  const l = addLayer(c, name);
+  l.box.scale.set(Math.min(1, 520 / Math.max(c.width, c.height)));
+  commit(); status(`« ${name} » ajouté à la feuille.`);
+}
+async function renderBank() {
+  const grid = $('bank-grid'); grid.innerHTML = '';
+  bankPop.querySelectorAll<HTMLElement>('#bank-tabs .ib').forEach(b => b.classList.toggle('on', b.dataset.tab === bankTab));
+  $('bank-actions').style.display = bankTab === 'mine' ? 'flex' : 'none';
+  const empty = $('bank-empty'); empty.style.display = 'none';
+  if (bankTab === 'shapes') {
+    for (const s of SHAPES) {
+      const b = document.createElement('button'); b.className = 'bk'; b.dataset.tip = s.name; b.dataset.pos = 'top';
+      const im = new Image(); im.src = makeShape(s.id, 120).toDataURL(); im.alt = s.name; b.appendChild(im);
+      b.onclick = () => insertCut(makeShape(s.id, 400), s.name);
+      grid.appendChild(b);
+    }
+    return;
+  }
+  let items: BankItem[] = [];
+  try { items = await bankList(); } catch (e) { toast('Banque inaccessible', String(e), 'err'); }
+  empty.style.display = items.length ? 'none' : 'block';
+  for (const it of items) {
+    const b = document.createElement('div'); b.className = 'bk'; b.tabIndex = 0; b.dataset.tip = it.name; b.dataset.pos = 'top';
+    const im = new Image(); im.src = it.thumb; im.alt = it.name;
+    const x = document.createElement('button'); x.className = 'bkx'; x.setAttribute('aria-label', 'Retirer de la banque'); x.innerHTML = '<svg class="ic"><use href="#i-trash"/></svg>';
+    x.onclick = async e => { e.stopPropagation(); await bankRemove(it.id!); renderBank(); };
+    b.append(im, x);
+    b.onclick = async () => insertCut(await bankCanvas(it), it.name);
+    grid.appendChild(b);
+  }
+}
+bankPop.querySelectorAll<HTMLElement>('#bank-tabs .ib').forEach(b => b.onclick = () => { bankTab = b.dataset.tab as typeof bankTab; renderBank(); });
+const closeBankPop = () => { bankPop.classList.remove('open'); $('btn-bank').classList.remove('on'); };
+$('btn-bank').onclick = e => {
+  e.stopPropagation();
+  if (bankPop.classList.contains('open')) { closeBankPop(); return; }
+  bankPop.classList.add('open'); $('btn-bank').classList.add('on'); renderBank();
+};
+addEventListener('pointerdown', e => { if (bankPop.classList.contains('open') && !bankPop.contains(e.target as HTMLElement) && !(e.target as HTMLElement).closest('#btn-bank')) closeBankPop(); });
+$('bank-add').onclick = async () => {
+  if (!selection.size) { status("Sélectionne d'abord un élément détouré."); return; }
+  let n = 0;
+  try { for (const l of selection) { const src = l.fxBase ?? l.base; await bankAdd(l.name.replace(/\.[a-z0-9]+$/i, ''), trim(src)?.canvas ?? src); n++; } }
+  catch (e) { toast('Ajout impossible', String(e), 'err'); return; }
+  toast('Ajouté à la banque', `${n} élément${n > 1 ? 's' : ''}`, 'ok'); renderBank();
+};
+$('bank-imp').onclick = () => $<HTMLInputElement>('file-bank').click();
+$<HTMLInputElement>('file-bank').onchange = async e => {
+  const i = e.target as HTMLInputElement; let n = 0;
+  try {
+    for (const f of Array.from(i.files ?? [])) {
+      if (!f.type.startsWith('image/')) continue;
+      const bmp = await createImageBitmap(f), k = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height)), c = makeCanvas(bmp.width * k, bmp.height * k);
+      c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height);
+      await bankAdd(f.name.replace(/\.[a-z0-9]+$/i, ''), trim(c)?.canvas ?? c); n++;
+    }
+  } catch (err) { toast('Import impossible', String(err), 'err'); }
+  i.value = ''; if (n) { toast('Importé dans la banque', `${n} image${n > 1 ? 's' : ''}`, 'ok'); renderBank(); }
+};
 $<HTMLInputElement>('bg').oninput = e => { bgColor = (e.target as HTMLInputElement).value; drawPaper(); commitSoon(); };
 
 const textPop = $('textpop');
@@ -904,22 +1010,27 @@ function pickerBroken() {
   try { return localStorage.getItem('maxernzt.nopicker') === '1'; } catch { return false; }
 }
 /** Enregistrer (asNew = false) : réécrit le fichier connu sans fenêtre ; Enregistrer sous (asNew = true) : demande toujours où. */
-async function saveProject(asNew = false) {
-  stopPlay();
+const dataUrls = new WeakMap<HTMLCanvasElement, string>();   // les images de base sont immuables : on ne les encode qu'une fois
+const urlOf = (c: HTMLCanvasElement) => { let u = dataUrls.get(c); if (!u) dataUrls.set(c, u = c.toDataURL('image/png')); return u; };
+function projectJson(): string {
   const ids = new Map<HTMLCanvasElement, string>(), images: Record<string, string> = {};
   const out = layers.map(l => {
     let id = ids.get(l.base);
-    if (!id) { id = 'img' + ids.size; ids.set(l.base, id); images[id] = l.base.toDataURL('image/png'); }
+    if (!id) { id = 'img' + ids.size; ids.set(l.base, id); images[id] = urlOf(l.base); }
     return { id: l.id, name: l.name, visible: l.visible, locked: l.locked || undefined, fx: l.fx, anim: l.anim, tl: l.tl, acc: l.acc, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
   });
-  const blob = new Blob([JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, tree: serialize(root), duration: tlDurManual, layers: out, images })], { type: 'application/json' });
+  return JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, paperTex: paperKind, paperAmt, tree: serialize(root), duration: tlDurManual, layers: out, images });
+}
+async function saveProject(asNew = false) {
+  stopPlay();
+  const blob = new Blob([projectJson()], { type: 'application/json' });
   const fileName = projectName + '.maxernzt';
   if (tauri) {
     try {
       let path = asNew ? null : projectPath;
       if (path) { try { await tauri.fs.writeFile(path, new Uint8Array(await blob.arrayBuffer())); } catch (err) { console.error('réécriture impossible', err); path = null; } }  // fichier déplacé ou inaccessible : on redemande
       if (!path) { path = await nativeSave(blob, fileName, 'Projet MaXernZt', 'maxernzt'); if (!path) return; }
-      projectPath = path; projectName = baseName(path).replace(/\.maxernzt$/i, ''); dirty = false;
+      projectPath = path; projectName = baseName(path).replace(/\.maxernzt$/i, ''); dirty = false; void kvDel('autosave').catch(() => {}); $('autosv').textContent = '';
       const info = `${baseName(path)} — ${layers.length} calques, ${fmtSize(blob.size)}`;
       $('btn-save').dataset.tip = `Enregistrer (Ctrl+S) — ${path}`;
       status(`Projet enregistré : ${path}`); toast('Projet enregistré', `${info}\n${path}`, 'ok');
@@ -943,7 +1054,7 @@ async function saveProject(asNew = false) {
       }
     }
     if (!ok) download(blob, fileName);
-    dirty = false;
+    dirty = false; void kvDel('autosave').catch(() => {}); $('autosv').textContent = '';
     const info = `${ok ? projectName + '.maxernzt' : fileName} — ${layers.length} calques, ${fmtSize(blob.size)}`, hhmm = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
     $('btn-save').dataset.tip = `Enregistrer (Ctrl+S) — dernier : ${hhmm}`;
     if (ok) { status(`Projet enregistré (${info}).`); toast('Projet enregistré', info, 'ok'); }
@@ -968,7 +1079,7 @@ async function loadProject(f: File, path?: string) {
     for (const [id, url] of Object.entries<string>(d.images)) imgs.set(id, await decode(url));
     const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, locked: !!l.locked, fx: l.fx, anim: l.anim, tl: l.tl, acc: l.acc, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
-    restore({ dur: typeof d.duration === 'number' ? d.duration : null, paper: Array.isArray(d.paper) && d.paper.length === 2 ? [d.paper[0], d.paper[1]] : undefined, layers: ls, bg: d.bg ?? bgColor, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
+    restore({ dur: typeof d.duration === 'number' ? d.duration : null, paper: Array.isArray(d.paper) && d.paper.length === 2 ? [d.paper[0], d.paper[1]] : undefined, layers: ls, bg: d.bg ?? bgColor, pk: d.paperTex ?? 'none', pa: typeof d.paperAmt === 'number' ? d.paperAmt : 70, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); projectPath = path ?? null; projectHandle = null; commit(); dirty = false;
     if (path) $('btn-save').dataset.tip = `Enregistrer (Ctrl+S) — ${path}`;
     status(`Projet « ${projectName} » ouvert (${ls.length} calques).`); toast('Projet ouvert', `${projectName} — ${ls.length} calques`, 'ok');
@@ -988,7 +1099,7 @@ $<HTMLInputElement>('file-proj').onchange = e => { const i = e.target as HTMLInp
 $('btn-new').onclick = () => {
   stopPlay();
   if (layers.length && dirty && !confirm('Vider la feuille ? (tu pourras annuler avec Ctrl+Z)')) return;
-  restore({ layers: [], bg: bgColor, tree: [], sel: [] }); projectName = 'collage'; projectPath = null; projectHandle = null; $('btn-save').dataset.tip = 'Enregistrer (Ctrl+S)'; commit(); status('Nouvelle feuille.');
+  restore({ layers: [], bg: bgColor, pk: 'none', tree: [], sel: [] }); projectName = 'collage'; projectPath = null; projectHandle = null; $('btn-save').dataset.tip = 'Enregistrer (Ctrl+S)'; commit(); status('Nouvelle feuille.');
 };
 addEventListener('beforeunload', e => { if (dirty && layers.length) e.preventDefault(); });
 
@@ -2196,6 +2307,35 @@ function syncTimeline() {
 }
 
 // accès console pour les tests
-(window as any).__app = { app, loadProject, saveProject, addLayer, layers, replaceBase, cutoutFlat, get selected() { return selected; } };
+
+// ---- enregistrement automatique : un brouillon récent est gardé sur l'appareil ; au démarrage on propose de le restaurer
+let autoRev = -1, autoBusy = false;
+async function autoSave() {
+  if (autoBusy || playing || !dirty || !layers.length || rev === autoRev) return;
+  autoBusy = true;
+  try {
+    const r = rev; await kvPut('autosave', { name: projectName, t: Date.now(), n: layers.length, json: projectJson() }); autoRev = r;
+    $('autosv').textContent = 'Sauvegarde auto ' + new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  } catch (e) { console.warn('sauvegarde auto impossible', e); } finally { autoBusy = false; }
+}
+setInterval(autoSave, 20000);
+addEventListener('visibilitychange', () => { if (document.hidden) autoSave(); });
+addEventListener('beforeunload', () => { void autoSave(); });
+(async () => {
+  try {
+    const a = await kvGet<{ name: string; t: number; n: number; json: string }>('autosave');
+    if (!a || layers.length) return;
+    const when = new Date(a.t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    $('restore-txt').textContent = `Brouillon retrouvé : « ${a.name} », ${a.n} calque${a.n > 1 ? 's' : ''} (${when})`;
+    $('restore').classList.add('open');
+    $('restore-yes').onclick = async () => {
+      $('restore').classList.remove('open');
+      await loadProject(new File([a.json], a.name + '.maxernzt'));
+      dirty = true;
+    };
+    $('restore-no').onclick = async () => { $('restore').classList.remove('open'); await kvDel('autosave'); };
+  } catch { /* stockage indisponible */ }
+})();
+(window as any).__app = { autoSave, app, loadProject, saveProject, addLayer, layers, replaceBase, cutoutFlat, get selected() { return selected; } };
 commit();
 status('Glisse des images ici, ou colle-les (Ctrl+V).');
