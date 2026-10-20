@@ -50,6 +50,7 @@ function toast(title: string, detail = '', kind: 'ok' | 'warn' | 'err' = 'ok', m
 const app = new Application();
 await app.init({ resizeTo: $('stage'), backgroundAlpha: 0, antialias: true, resolution: window.devicePixelRatio, autoDensity: true });
 $('stage').appendChild(app.canvas);
+new ResizeObserver(() => { app.resize(); if (!layers.length || viewFitted) fitView(); }).observe($('stage'));   // la feuille suit la taille de la zone de travail (timeline étirée, fenêtre redimensionnée)
 
 const world = new Container();
 const paper = new Graphics();
@@ -69,6 +70,7 @@ drawPaper();
 
 // ---- vue (zoom / déplacement)
 const view = { x: 0, y: 0, s: 1 };
+let viewFitted = true;   // vrai tant que la vue est « tout voir » : elle se recadre alors quand la zone de travail change de taille
 const applyView = () => {
   world.position.set(view.x, view.y); world.scale.set(view.s);
   // la grille du tapis de coupe suit le zoom et le déplacement
@@ -79,10 +81,10 @@ const applyView = () => {
 };
 function fitView() {
   const r = app.screen; view.s = Math.min((r.width - 40) / PW, (r.height - 40) / PH);
-  view.x = (r.width - PW * view.s) / 2; view.y = (r.height - PH * view.s) / 2; applyView();
+  view.x = (r.width - PW * view.s) / 2; view.y = (r.height - PH * view.s) / 2; viewFitted = true; applyView();
 }
 fitView();
-app.renderer.on('resize', () => { if (!layers.length) fitView(); });
+app.renderer.on('resize', () => { if (!layers.length || viewFitted) fitView(); });
 const toWorld = (sx: number, sy: number): Pt => world.toLocal({ x: sx, y: sy });
 
 // ---- calques
@@ -1055,7 +1057,7 @@ cv.addEventListener('pointermove', e => {
     return;
   }
   if (!pan && !drag && !path && !marq && tool === 'move') { const k = hitHandle(p); cv.style.cursor = k ? HANDLE_CURSOR[k] : 'default'; }
-  if (pan) { view.x = pan.vx + p.x - pan.sx; view.y = pan.vy + p.y - pan.sy; applyView(); }
+  if (pan) { viewFitted = false; view.x = pan.vx + p.x - pan.sx; view.y = pan.vy + p.y - pan.sy; applyView(); }
   else if (drag) {
     const w = toWorld(p.x, p.y), dx = w.x - drag.sx, dy = w.y - drag.sy;
     if (!drag.moved && Math.hypot(dx, dy) * view.s < 3) return;
@@ -1087,7 +1089,7 @@ cv.addEventListener('wheel', e => {
   const k = e.deltaY > 0 ? 0.92 : 1 / 0.92;
   if (selection.size && e.altKey) applyDelta(k, 0);
   else if (selection.size && e.shiftKey) applyDelta(1, (e.deltaY > 0 ? 1 : -1) * 0.07);
-  else { const p = pos(e), w = toWorld(p.x, p.y); view.s = Math.min(8, Math.max(0.1, view.s * k)); view.x = p.x - w.x * view.s; view.y = p.y - w.y * view.s; applyView(); }
+  else { viewFitted = false; const p = pos(e), w = toWorld(p.x, p.y); view.s = Math.min(8, Math.max(0.1, view.s * k)); view.x = p.x - w.x * view.s; view.y = p.y - w.y * view.s; applyView(); }
   commitSoon();
 }, { passive: false });
 addEventListener('keydown', e => {
@@ -1925,7 +1927,26 @@ bindNum('tl-dur', v => { tlDurManual = v > 0 ? Math.min(600, Math.max(0.5, v)) :
 $<HTMLInputElement>('tl-zoom').oninput = e => { tlPps = +(e.target as HTMLInputElement).value; tlSig = ''; };
 $('tl-body').addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); tlPps = Math.min(400, Math.max(20, tlPps * (e.deltaY > 0 ? 0.9 : 1.1))); $<HTMLInputElement>('tl-zoom').value = String(Math.round(tlPps)); tlSig = ''; }, { passive: false });
 $('tl-ruler-row').addEventListener('pointerdown', e => { if ((e.target as HTMLElement).closest('.tn')) return; startScrub(e); });
-$('btn-tlfold').onclick = () => $('timeline').classList.toggle('folded');
+// hauteur de la timeline : on l'étire vers le haut en tirant sa poignée (double-clic : replier / déplier), la hauteur est mémorisée
+const TL_MIN = 120;
+let tlHeight = 236;
+try { tlHeight = Math.max(TL_MIN, +(localStorage.getItem('maxernzt.tlh') ?? 236) || 236); } catch { /* stockage indisponible */ }
+const tlMaxHeight = () => Math.max(TL_MIN, window.innerHeight - 44 - 42 - 26 - $('animbar').offsetHeight - 140);   // il reste toujours de la place pour la feuille
+function applyTlHeight() { const t = $('timeline'); t.style.height = t.classList.contains('folded') ? '' : Math.min(tlHeight, tlMaxHeight()) + 'px'; }
+function foldTimeline(on: boolean) { $('timeline').classList.toggle('folded', on); applyTlHeight(); }
+applyTlHeight();
+addEventListener('resize', applyTlHeight);
+$('btn-tlfold').onclick = () => foldTimeline(!$('timeline').classList.contains('folded'));
+$('tl-grip').addEventListener('dblclick', () => foldTimeline(!$('timeline').classList.contains('folded')));
+$('tl-grip').addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const y0 = e.clientY, h0 = $('timeline').getBoundingClientRect().height;
+  if ($('timeline').classList.contains('folded')) foldTimeline(false);
+  const mv = (ev: PointerEvent) => { tlHeight = Math.round(Math.min(tlMaxHeight(), Math.max(TL_MIN, h0 + (y0 - ev.clientY)))); applyTlHeight(); };
+  mv(e);
+  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); try { localStorage.setItem('maxernzt.tlh', String(tlHeight)); } catch { /* ignoré */ } };
+  addEventListener('pointermove', mv); addEventListener('pointerup', up);
+});
 $('btn-rec').onclick = () => {
   recording = !recording; $('btn-rec').classList.toggle('on', recording);
   if (recording) { if (playing && !paused) pausePlay(); else if (!playing) playheadTo(animT); status("Enregistrement : place la tête de lecture, puis déplace, tourne ou agrandis l'élément : les images clés se créent seules."); }
@@ -1982,6 +2003,6 @@ function syncTimeline() {
 }
 
 // accès console pour les tests
-(window as any).__app = { loadProject, saveProject, addLayer, layers, replaceBase, cutoutFlat, get selected() { return selected; } };
+(window as any).__app = { app, loadProject, saveProject, addLayer, layers, replaceBase, cutoutFlat, get selected() { return selected; } };
 commit();
 status('Glisse des images ici, ou colle-les (Ctrl+V).');

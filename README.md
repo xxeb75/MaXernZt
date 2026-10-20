@@ -48,16 +48,7 @@ Outil « Détourer au clic » : clic sur l'objet → aperçu ; Maj+clic ajoute u
 
 ## Timeline
 
-Panneau en bas (repliable) : règle graduée, tête de lecture que l'on glisse, une ligne par élément ou groupe qui se déplie en cinq pistes : **Position, Rotation, Taille, Chiffonnage, Visibilité**. Les trajets dessinés apparaissent comme des clips, avec leurs pauses.
-
-- **Enregistrement automatique** (point rouge) : place la tête de lecture, puis déplace, tourne (poignée ronde) ou agrandis (coins) l'élément sélectionné : l'image clé se crée seule à cet instant. La première image clé posée après 0 s ajoute un départ à la valeur de repos.
-- Image clé de pose (losange) : fixe position, rotation et taille à cet instant. Double-clic sur une piste : image clé à la valeur actuelle.
-- Glisser un losange pour le décaler (pas de 0,05 s, Maj = libre) ; l'éditeur permet de saisir l'instant et la valeur au clavier, de choisir l'interpolation (constante, douce, palier) ou de supprimer (Suppr).
-- Durée de la timeline : automatique ou saisie ; zoom au curseur ou Ctrl+molette. Tout est enregistré dans le projet, lu à l'export vidéo et dans le manifeste.
-
-## Timeline
-
-Panneau en bas (repliable) : règle graduée, tête de lecture que l'on glisse, une ligne par élément ou groupe qui se déplie en cinq pistes : **Position, Rotation, Taille, Chiffonnage, Visibilité**. Les trajets dessinés apparaissent comme des clips, avec leurs pauses.
+Panneau en bas, que l'on étire vers le haut en tirant sa poignée (double-clic : replier ou déplier ; la hauteur est mémorisée, la feuille se recadre toute seule) : règle graduée, tête de lecture que l'on glisse, une ligne par élément ou groupe qui se déplie en cinq pistes : **Position, Rotation, Taille, Chiffonnage, Visibilité**. Les trajets dessinés apparaissent comme des clips, avec leurs pauses.
 
 - **Enregistrement automatique** (point rouge) : place la tête de lecture, puis déplace, tourne (poignée ronde) ou agrandis (coins) l'élément sélectionné : l'image clé se crée seule à cet instant. La première image clé posée après 0 s ajoute un départ à la valeur de repos.
 - Image clé de pose (losange) : fixe position, rotation et taille à cet instant. Double-clic sur une piste : image clé à la valeur actuelle.
