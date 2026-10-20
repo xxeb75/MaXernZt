@@ -39,17 +39,9 @@ button:focus-visible, input:focus-visible, .ly:focus-visible { outline: 2px soli
 
 /* info-bulles instantanées */
 [data-tip] { position: relative; }
-[data-tip]::after {
-  content: attr(data-tip); position: absolute; z-index: 50; padding: 5px 9px; border-radius: 5px; width: max-content; max-width: min(360px, 80vw); white-space: normal; overflow-wrap: anywhere; pointer-events: none;
-  background: #0f1113; color: var(--text); font-size: 12px; opacity: 0; transition: opacity .08s;
-  box-shadow: 0 0 0 1px var(--line), 0 4px 14px rgba(0,0,0,.4);
-}
-[data-tip]:hover::after { opacity: 1; transition-delay: .25s; }
-[data-pos="right"]::after { left: calc(100% + 8px); top: 50%; transform: translateY(-50%); }
-[data-pos="bottom"]::after { top: calc(100% + 8px); left: 50%; transform: translateX(-50%); }
-[data-pos="top"]::after { bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); }
-[data-pos="bottom-start"]::after { top: calc(100% + 8px); left: 0; }
-[data-pos="bottom-left"]::after { top: calc(100% + 8px); right: 0; }
+#tip { position: fixed; z-index: 10000; left: 0; top: 0; padding: 5px 9px; border-radius: 5px; width: max-content; max-width: min(360px, 80vw); white-space: normal; overflow-wrap: anywhere; pointer-events: none;
+  background: #0f1113; color: var(--text); font-size: 12px; line-height: 1.35; opacity: 0; transition: opacity .08s; box-shadow: 0 0 0 1px var(--line), 0 4px 14px rgba(0,0,0,.4); }
+#tip.on { opacity: 1; }
 
 /* barres */
 #top, #opts { display: flex; align-items: center; gap: 4px; padding: 0 10px; background: var(--chrome); }
@@ -140,7 +132,7 @@ body.drop #stage::after { content: ""; position: absolute; inset: 12px; border: 
 #foot { grid-area: foot; display: flex; align-items: center; padding: 0 12px; background: var(--chrome); border-top: 1px solid #16181b; color: var(--dim); font-size: 12px; overflow: hidden; }
 #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-@media (prefers-reduced-motion: reduce) { [data-tip]::after { transition: none; } }
+@media (prefers-reduced-motion: reduce) { #tip { transition: none; } }
 @media (max-width: 760px) { body { grid-template-columns: 48px 1fr 150px; } input[type=range] { width: 64px; } }
 #textpop.editing { box-shadow: 0 0 0 2px var(--accent), 0 10px 30px rgba(0,0,0,.55); }
 #textpop.editing .seg { opacity: .3; pointer-events: none; }
