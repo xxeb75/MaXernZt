@@ -1582,7 +1582,7 @@ function drawAnimPaths() {
   const walk = (g: Group) => {
     for (const c of g.children) {
       const a = animOf(c);
-      if (a && a.pts.length > 1 && shown(c)) {
+      if (a && a.pts.length > 1 && (cum(a).at(-1) ?? 0) > 1 && shown(c)) {   // pas de tracé à dessiner pour une rotation sur place
         const k = nodeCenter(c), P = a.pts.map(p => world.toGlobal({ x: k.x + p.x, y: k.y + p.y })), al = sel.has(c) ? 1 : 0.35;
         const f = P.flatMap(p => [p.x, p.y]);
         animG.poly(f, false).stroke({ width: 4.5, color: 0x000000, alpha: 0.45 * al });
@@ -1636,6 +1636,15 @@ $<HTMLInputElement>('anim-dur').oninput = e => editDuration(+(e.target as HTMLIn
 $('btn-amode').onclick = () => editAnim(a => ({ ...a, mode: a.mode === 'loop' ? 'pingpong' : 'loop' }));
 $('btn-aease').onclick = () => editAnim(a => ({ ...a, ease: a.ease === 'linear' ? 'smooth' : 'linear' }));
 $('btn-afollow').onclick = () => editAnim(a => ({ ...a, follow: !a.follow }));
+/** Rotation sur place : une animation sans déplacement (trajet de longueur nulle) qui fait tourner l'élément ou le groupe sélectionné. */
+$('btn-spinonly').onclick = () => {
+  const nodes = selectedNodes(); if (!nodes.length) { status("Sélectionne d'abord un élément ou un groupe."); return; }
+  for (const n of nodes) {
+    const old = animOf(n);
+    setAnim(n, old ? { ...old, turns: old.turns || 1 } : { pts: [{ x: 0, y: 0 }, { x: 0, y: 0 }], dur: 3, mode: 'loop', ease: 'linear', follow: false, keys: [], turns: 1 });
+  }
+  commit(); status('Rotation sur place : règle le nombre de tours et la durée dans la barre du bas, puis ▶.');
+};
 bindNum('v-turns', v => editAnim(a => ({ ...a, turns: Math.max(-50, Math.min(50, Math.round(v * 100) / 100)) })));
 $('btn-adel').onclick = () => { const ns = animNodes(); if (!ns.length) return; stopPlay(); ns.forEach(n => setAnim(n, undefined)); commit(); };
 $<HTMLInputElement>('tl').oninput = e => { playheadTo((+(e.target as HTMLInputElement).value / 1000) * tlTotal()); };
