@@ -25,13 +25,14 @@ const vnoise = (x: number, y: number, s: number) => {
  * Le contour est un champ flou de la silhouette coupé à un seuil qui varie avec du bruit :
  * épaisseur inégale, bord déchiqueté, fibres. `rough` (0-100) règle l'irrégularité, `seed` la forme.
  */
-/** Le fichier existe-t-il vraiment (et n'est-ce pas la page d'accueil renvoyée à sa place) ? */
+/** Le fichier existe-t-il vraiment ? On lit son premier octet : une page HTML renvoyée à sa place commence par « < ». */
 export async function assetOk(url: string): Promise<boolean> {
   try {
     const r = await fetch(url);
-    const ok = r.ok && !(r.headers.get('content-type') || '').includes('text/html');
-    r.body?.cancel();
-    return ok;
+    if (!r.ok || !r.body) return false;
+    const rd = r.body.getReader(), { value } = await rd.read();
+    rd.cancel();
+    return !!value && value.length > 0 && value[0] !== 0x3c;
   } catch { return false; }
 }
 
