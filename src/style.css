@@ -40,7 +40,7 @@ button:focus-visible, input:focus-visible, .ly:focus-visible { outline: 2px soli
 /* info-bulles instantanées */
 [data-tip] { position: relative; }
 [data-tip]::after {
-  content: attr(data-tip); position: absolute; z-index: 50; padding: 5px 9px; border-radius: 5px; white-space: nowrap; pointer-events: none;
+  content: attr(data-tip); position: absolute; z-index: 50; padding: 5px 9px; border-radius: 5px; width: max-content; max-width: min(360px, 80vw); white-space: normal; overflow-wrap: anywhere; pointer-events: none;
   background: #0f1113; color: var(--text); font-size: 12px; opacity: 0; transition: opacity .08s;
   box-shadow: 0 0 0 1px var(--line), 0 4px 14px rgba(0,0,0,.4);
 }
@@ -48,6 +48,7 @@ button:focus-visible, input:focus-visible, .ly:focus-visible { outline: 2px soli
 [data-pos="right"]::after { left: calc(100% + 8px); top: 50%; transform: translateY(-50%); }
 [data-pos="bottom"]::after { top: calc(100% + 8px); left: 50%; transform: translateX(-50%); }
 [data-pos="top"]::after { bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); }
+[data-pos="bottom-start"]::after { top: calc(100% + 8px); left: 0; }
 [data-pos="bottom-left"]::after { top: calc(100% + 8px); right: 0; }
 
 /* barres */
