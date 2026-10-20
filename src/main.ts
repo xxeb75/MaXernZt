@@ -18,7 +18,7 @@ interface BallFx { spr: Sprite; sh: Sprite; fold: Sprite; frames: Texture[]; k: 
 /** Accessoire généré (scotch, peinture, punaise…) : type et réglages, pour pouvoir le modifier par double-clic. */
 interface AccSpec { kind: string; p: AccParams }
 interface Layer extends Leaf {
-  tl?: TL; acc?: AccSpec; anim?: Anim; ball?: BallFx; name: string; visible: boolean; base: HTMLCanvasElement; baked: HTMLCanvasElement;
+  tl?: TL; acc?: AccSpec; anim?: Anim; ball?: BallFx; name: string; visible: boolean; locked?: boolean; base: HTMLCanvasElement; baked: HTMLCanvasElement;
   border: number; shadow: number; rough: number; letter?: LetterSpec;
   box: Container; sprite: Sprite; shade: Sprite;
 }
@@ -111,6 +111,11 @@ const visOf = (n: Node) => (isGroup(n) ? n.visible : (n as Layer).visible);
 /** Visible seulement si le nœud et tous ses groupes le sont. */
 const shown = (n: Node) => { for (let c: Node | null = n; c; c = c.parent) if (!visOf(c)) return false; return true; };
 function applyVis() { for (const l of layers) l.box.visible = shown(l); }
+// aimantation active (réglage mémorisé)
+let snapOn = true;
+try { snapOn = localStorage.getItem('maxernzt.snap') !== '0'; } catch { /* stockage indisponible */ }
+/** Verrouillé si le nœud ou l'un de ses groupes l'est : plus de sélection ni de modification sur la feuille. */
+const isLocked = (n: Node): boolean => { for (let c: Node | null = n; c; c = c.parent) if ((c as { locked?: boolean }).locked) return true; return false; };
 
 const texOf = (c: HTMLCanvasElement) => Texture.from(c);
 
@@ -146,6 +151,7 @@ function addLayer(base: HTMLCanvasElement, name: string, at?: { pos: Pt; rot: nu
 }
 
 function setSelection(ls: Layer[], primary?: Layer) {
+  if (ls.some(isLocked)) { ls = ls.filter(x => !isLocked(x)); status('Élément verrouillé : clique le cadenas dans le panneau des calques pour le déverrouiller.'); }
   selection.clear(); ls.forEach(x => selection.add(x));
   selected = primary && selection.has(primary) ? primary : ls[ls.length - 1] ?? null;
   const l = selected;
@@ -170,20 +176,20 @@ const worldToLayer = (l: Layer, p: Pt): Pt => l.box.toLocal(p, world);
 function hit(l: Layer, p: Pt): boolean {
   const q = worldToLayer(l, p);
   const x = Math.floor(q.x), y = Math.floor(q.y);
-  if (!l.box.visible) return false;
+  if (!l.box.visible || isLocked(l)) return false;
   if (x < 0 || y < 0 || x >= l.baked.width || y >= l.baked.height) return false;
   return l.baked.getContext('2d')!.getImageData(x, y, 1, 1).data[3] > 20;
 }
 
 // ---- historique (annuler / rétablir) : instantanés légers, les canvas de base sont immuables
-interface LState { id: number; name: string; visible: boolean; anim?: Anim; tl?: TL; acc?: AccSpec; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
+interface LState { id: number; name: string; visible: boolean; locked?: boolean; anim?: Anim; tl?: TL; acc?: AccSpec; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
 interface Snap { layers: LState[]; bg: string; tree: TNode[]; sel: number[]; paper?: [number, number]; dur?: number | null }
 const snap = (): Snap => ({
-  layers: layers.map(l => ({ id: l.id, name: l.name, visible: l.visible, anim: l.anim, tl: l.tl, acc: l.acc, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: restPose.get(l)?.x ?? l.box.x, y: restPose.get(l)?.y ?? l.box.y, rot: restPose.get(l)?.r ?? l.box.rotation, sx: restPose.get(l)?.sx ?? l.box.scale.x, sy: restPose.get(l)?.sy ?? l.box.scale.y })),
+  layers: layers.map(l => ({ id: l.id, name: l.name, visible: l.visible, locked: l.locked, anim: l.anim, tl: l.tl, acc: l.acc, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: restPose.get(l)?.x ?? l.box.x, y: restPose.get(l)?.y ?? l.box.y, rot: restPose.get(l)?.r ?? l.box.rotation, sx: restPose.get(l)?.sx ?? l.box.scale.x, sy: restPose.get(l)?.sy ?? l.box.scale.y })),
   paper: [PW, PH], dur: tlDurManual, bg: bgColor, tree: serialize(root), sel: [...selection].filter(l => l !== selected).concat(selected ? [selected] : []).map(l => l.id),
 });
 const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.paper?.join() === b.paper?.join() && a.dur === b.dur && a.layers.length === b.layers.length && JSON.stringify(a.tree) === JSON.stringify(b.tree) &&
-  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.visible === v.visible && u.anim === v.anim && u.tl === v.tl && u.acc === v.acc && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
+  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.visible === v.visible && u.locked === v.locked && u.anim === v.anim && u.tl === v.tl && u.acc === v.acc && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
 const hist: Snap[] = []; let hi = -1, soon = 0;
 function updHistUI() { ($('btn-undo') as HTMLButtonElement).disabled = hi <= 0; ($('btn-redo') as HTMLButtonElement).disabled = hi >= hist.length - 1; }
 function commit() {
@@ -212,12 +218,12 @@ function restore(s: Snap) {
       l.box.position.set(st.x, st.y); l.box.rotation = st.rot; l.box.scale.set(st.sx, st.sy);
       if (dirty) refresh(l);
     }
-    l.letter = st.letter; l.visible = st.visible !== false; l.anim = st.anim; l.tl = st.tl; l.acc = st.acc;
+    l.letter = st.letter; l.visible = st.visible !== false; l.locked = st.locked; l.anim = st.anim; l.tl = st.tl; l.acc = st.acc;
     ordered.push(l);
   }
   root.children = [];
   const byId2 = new Map(ordered.map(l => [l.id, l]));
-  buildTree(s.tree, root, id => byId2.get(id), (id, name, collapsed, visible, anim, tl) => { groupSeq = Math.max(groupSeq, id + 1); return { id, name, collapsed, visible, anim, tl, children: [], parent: root }; });
+  buildTree(s.tree, root, id => byId2.get(id), (id, name, collapsed, visible, anim, tl, locked) => { groupSeq = Math.max(groupSeq, id + 1); return { id, name, collapsed, visible, locked: locked || undefined, anim, tl, children: [], parent: root }; });
   for (const l of ordered) if (!l.parent || !hasAncestorRoot(l)) attach(l, root);
   reflow();
   bgColor = s.bg; drawPaper(); $<HTMLInputElement>('bg').value = bgColor;
@@ -428,16 +434,27 @@ function selectedNodes(): Node[] {
   walk(root);
   return out;
 }
+const syncSnapBtn = () => { $('btn-snap').classList.toggle('on', snapOn); };
+syncSnapBtn();
+$('btn-snap').onclick = () => {
+  snapOn = !snapOn; syncSnapBtn(); try { localStorage.setItem('maxernzt.snap', snapOn ? '1' : '0'); } catch { /* ignoré */ }
+  status(snapOn ? 'Aimantation activée (Alt : la désactiver le temps du geste).' : 'Aimantation désactivée.');
+};
+$('btn-lock').onclick = () => {
+  const ns = selectedNodes(); if (!ns.length) { status('Sélectionne un calque.'); return; }
+  ns.forEach(n => ((n as { locked?: boolean }).locked = true));
+  setSelection([]); commit(); status('Verrouillé : clique le cadenas dans le panneau des calques pour le déverrouiller.');
+};
 $('btn-del').onclick = () => { if (!selection.size) { status('Sélectionne un calque.'); return; } [...selection].forEach(removeLayer); setSelection([]); commit(); };
 
 function cloneNode(n: Node, parent: Group, dx: number, dy: number, out: Layer[]): Node {
   if (isGroup(n)) {
-    const g: Group = { id: groupSeq++, name: n.name, collapsed: n.collapsed, visible: n.visible, anim: n.anim, tl: n.tl, children: [], parent };
+    const g: Group = { id: groupSeq++, name: n.name, collapsed: n.collapsed, visible: n.visible, locked: n.locked, anim: n.anim, tl: n.tl, children: [], parent };
     parent.children.push(g); n.children.forEach(c => cloneNode(c, g, dx, dy, out)); return g;
   }
   const l = n as Layer;
   const nl = addLayer(l.base, l.name, { pos: { x: l.box.x + dx, y: l.box.y + dy }, rot: l.box.rotation, scale: { x: l.box.scale.x, y: l.box.scale.y } }, { border: l.border, shadow: l.shadow, rough: l.rough });
-  nl.letter = l.letter; nl.visible = l.visible; nl.anim = l.anim; nl.tl = l.tl; nl.acc = l.acc; detach(nl); attach(nl, parent); out.push(nl);
+  nl.letter = l.letter; nl.visible = l.visible; nl.locked = l.locked; nl.anim = l.anim; nl.tl = l.tl; nl.acc = l.acc; detach(nl); attach(nl, parent); out.push(nl);
   return nl;
 }
 /** Duplique des éléments ou des groupes (la copie, décalée, se place juste au-dessus de l'original et devient la sélection). */
@@ -855,7 +872,7 @@ async function saveProject(asNew = false) {
   const out = layers.map(l => {
     let id = ids.get(l.base);
     if (!id) { id = 'img' + ids.size; ids.set(l.base, id); images[id] = l.base.toDataURL('image/png'); }
-    return { id: l.id, name: l.name, visible: l.visible, anim: l.anim, tl: l.tl, acc: l.acc, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
+    return { id: l.id, name: l.name, visible: l.visible, locked: l.locked || undefined, anim: l.anim, tl: l.tl, acc: l.acc, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
   });
   const blob = new Blob([JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, tree: serialize(root), duration: tlDurManual, layers: out, images })], { type: 'application/json' });
   const fileName = projectName + '.maxernzt';
@@ -911,7 +928,7 @@ async function loadProject(f: File, path?: string) {
     if (d.format !== 'maxernzt' || !Array.isArray(d.layers)) throw new Error('fichier non reconnu');
     const imgs = new Map<string, HTMLCanvasElement>();
     for (const [id, url] of Object.entries<string>(d.images)) imgs.set(id, await decode(url));
-    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, anim: l.anim, tl: l.tl, acc: l.acc, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
+    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, locked: !!l.locked, anim: l.anim, tl: l.tl, acc: l.acc, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
     restore({ dur: typeof d.duration === 'number' ? d.duration : null, paper: Array.isArray(d.paper) && d.paper.length === 2 ? [d.paper[0], d.paper[1]] : undefined, layers: ls, bg: d.bg ?? bgColor, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); projectPath = path ?? null; projectHandle = null; commit(); dirty = false;
@@ -978,7 +995,35 @@ function applyDelta(k: number, dth: number) {
   }
 }
 let xf: Xf | null = null;
-let drag: { items: Item[]; sx: number; sy: number; moved: boolean; collapse: Layer[] | null; hit: Layer; rec?: RecBase | null } | null = null;
+interface SnapCtx { b: { x0: number; y0: number; x1: number; y1: number }; tx: number[]; ty: number[] }
+let drag: { items: Item[]; sx: number; sy: number; moved: boolean; collapse: Layer[] | null; hit: Layer; rec?: RecBase | null; snap?: SnapCtx | null } | null = null;
+// aimantation : bords et centre de l'élément collés à ceux de la feuille et des autres éléments (Alt = désactivée le temps du geste)
+let snapLines: { x?: number; y?: number }[] = [];
+function worldBox(l: Layer) {
+  const cs = frameCorners(l).map(c => toWorld(c.x, c.y));
+  return { x0: Math.min(...cs.map(c => c.x)), x1: Math.max(...cs.map(c => c.x)), y0: Math.min(...cs.map(c => c.y)), y1: Math.max(...cs.map(c => c.y)) };
+}
+function snapSetup(): SnapCtx {
+  const tx = [0, PW / 2, PW], ty = [0, PH / 2, PH];
+  for (const l of layers) {
+    if (selection.has(l) || !l.box.visible) continue;
+    const b = worldBox(l); tx.push(b.x0, (b.x0 + b.x1) / 2, b.x1); ty.push(b.y0, (b.y0 + b.y1) / 2, b.y1);
+  }
+  const bs = [...selection].map(worldBox);
+  return { b: { x0: Math.min(...bs.map(b => b.x0)), x1: Math.max(...bs.map(b => b.x1)), y0: Math.min(...bs.map(b => b.y0)), y1: Math.max(...bs.map(b => b.y1)) }, tx, ty };
+}
+function snapMove(s: SnapCtx, dx: number, dy: number) {
+  const thr = 8 / view.s, lines: { x?: number; y?: number }[] = [];
+  const fit = (m: number[], t: number[], d: number, key: 'x' | 'y') => {
+    let best = thr, adj = 0, at: number | null = null;
+    for (const a of m) for (const b of t) { const e = b - (a + d); if (Math.abs(e) < best) { best = Math.abs(e); adj = e; at = b; } }
+    if (at !== null) lines.push({ [key]: at }); return d + adj;
+  };
+  const { b } = s;
+  dx = fit([b.x0, (b.x0 + b.x1) / 2, b.x1], s.tx, dx, 'x'); dy = fit([b.y0, (b.y0 + b.y1) / 2, b.y1], s.ty, dy, 'y');
+  return { dx, dy, lines };
+}
+const snapActive = (e: { altKey: boolean }) => snapOn !== e.altKey;
 let marq: { x0: number; y0: number; x1: number; y1: number; add: boolean } | null = null;
 let pan: { sx: number; sy: number; vx: number; vy: number } | null = null, path: Pt[] | null = null;
 const cv = app.canvas;
@@ -990,7 +1035,7 @@ function finishMarquee(m: NonNullable<typeof marq>) {
   const found = new Set<Layer>();
   for (const l of layers) {
     const cs = frameCorners(l), ax0 = Math.min(...cs.map(c => c.x)), ax1 = Math.max(...cs.map(c => c.x)), ay0 = Math.min(...cs.map(c => c.y)), ay1 = Math.max(...cs.map(c => c.y));
-    if (l.box.visible && ax1 >= x0 && ax0 <= x1 && ay1 >= y0 && ay0 <= y1) found.add(l);
+    if (l.box.visible && !isLocked(l) && ax1 >= x0 && ax0 <= x1 && ay1 >= y0 && ay0 <= y1) found.add(l);
   }
   setSelection([...(m.add ? new Set([...selection, ...found]) : found)]);
 }
@@ -1032,7 +1077,7 @@ cv.addEventListener('pointerdown', e => {
     if (!selection.has(hl)) setSelection(ls, hl); else if (selection.size > 1) collapse = ls;
     const rec = recStart();
     if (!collapse && !rec) toTop(node);
-    drag = { items: mkItems(), sx: w.x, sy: w.y, moved: false, collapse, hit: hl, rec };
+    drag = { items: mkItems(), sx: w.x, sy: w.y, moved: false, collapse, hit: hl, rec, snap: rec ? null : snapSetup() };
     return;
   }
   if (!e.shiftKey) setSelection([]);
@@ -1055,6 +1100,7 @@ cv.addEventListener('pointermove', e => {
     const w = toWorld(p.x, p.y), single = xf.items.length === 1;
     if (xf.kind === 'rot') {
       let dth = Math.atan2(w.y - xf.cy, w.x - xf.cx) - xf.a0;
+      if (!e.shiftKey && single && snapActive(e)) { const st = Math.PI / 12, tot = xf.items[0].r + dth, sn = Math.round(tot / st) * st; if (Math.abs(sn - tot) < 0.05) dth = sn - xf.items[0].r; }   // aimantation : crans de 15°
       if (e.shiftKey) { const step = Math.PI / 12; dth = single ? Math.round((xf.items[0].r + dth) / step) * step - xf.items[0].r : Math.round(dth / step) * step; }
       const cos = Math.cos(dth), sin = Math.sin(dth);
       for (const it of xf.items) { const rx = it.x - xf.cx, ry = it.y - xf.cy; it.l.box.position.set(xf.cx + rx * cos - ry * sin, xf.cy + rx * sin + ry * cos); it.l.box.rotation = it.r + dth; }
@@ -1067,10 +1113,13 @@ cv.addEventListener('pointermove', e => {
   if (!pan && !drag && !path && !marq && tool === 'move') { const k = hitHandle(p); cv.style.cursor = k ? HANDLE_CURSOR[k] : 'default'; }
   if (pan) { viewFitted = false; view.x = pan.vx + p.x - pan.sx; view.y = pan.vy + p.y - pan.sy; applyView(); }
   else if (drag) {
-    const w = toWorld(p.x, p.y), dx = w.x - drag.sx, dy = w.y - drag.sy;
+    const w = toWorld(p.x, p.y);
+    let dx = w.x - drag.sx, dy = w.y - drag.sy;
     if (!drag.moved && Math.hypot(dx, dy) * view.s < 3) return;
     drag.moved = true;
     if (drag.rec) { recDrag(dx, dy); return; }
+    snapLines = [];
+    if (drag.snap && snapActive(e)) { const s = snapMove(drag.snap, dx, dy); dx = s.dx; dy = s.dy; snapLines = s.lines; }
     for (const it of drag.items) it.l.box.position.set(it.x + dx, it.y + dy);
   } else if (marq) {
     marq.x1 = p.x; marq.y1 = p.y;
@@ -1078,6 +1127,7 @@ cv.addEventListener('pointermove', e => {
   } else if (path) { path.push(p); { const f = path.flatMap(q => [q.x, q.y]); pathG.clear().poly(f, false).stroke({ width: 5, color: 0x000000, alpha: 0.55 }).poly(f, false).stroke({ width: 2.2, color: 0xffffff }); } }
 });
 const end = () => {
+  snapLines = [];
   if (kr) { commit(); kr = null; }
   if (xf) { commit(); xf = null; }
   if (drag) { if (!drag.moved && drag.collapse) setSelection(drag.collapse, drag.hit); commit(); drag = null; }
@@ -1107,14 +1157,15 @@ addEventListener('keydown', e => {
     if (k === 's') { e.preventDefault(); saveProject(e.shiftKey); return; }
     if (k === 'd' && selection.size) { e.preventDefault(); $('btn-dup').click(); return; }
     if (k === 'o') { e.preventDefault(); $('btn-open').click(); return; }
+    if (k === 'l' && !e.shiftKey) { e.preventDefault(); $('btn-lock').click(); return; }
     if (typing) return;
-  if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); jumpKey(e.key === 'ArrowRight' ? 1 : -1); return; }
     if (k === 'g') { e.preventDefault(); (e.shiftKey ? ungroupSelection : groupSelection)(); return; }
     if (k === 'a') { e.preventDefault(); setSelection([...layers]); return; }
     if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); } else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
     return;
   }
   if (typing) return;
+  if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); jumpKey(e.key === 'ArrowRight' ? 1 : -1); return; }
   const key = e.key.toLowerCase(), click = (id: string) => $(id).click();
   if (e.key === ' ') { e.preventDefault(); click('btn-play'); return; }
   if (key === 'p') { click('btn-path'); return; }
@@ -1138,6 +1189,10 @@ addEventListener('keydown', e => {
 // ---- surcouche de sélection
 app.ticker.add(() => {
   selG.clear(); animG.clear();
+  if (snapLines.length) {
+    for (const g of snapLines) { if (g.x !== undefined) { const sx = view.x + g.x * view.s; selG.moveTo(sx, 0).lineTo(sx, app.screen.height); } else { const sy = view.y + g.y! * view.s; selG.moveTo(0, sy).lineTo(app.screen.width, sy); } }
+    selG.stroke({ width: 1, color: 0xff4fd8 });
+  }
   if (playing) { if (!paused) { animT += app.ticker.deltaMS / 1000; const D = tlDuration(); if (animT >= D) animT %= D; } applyAnim(); if (!paused) { syncPanels(); return; } }
   drawAnimPaths();
   if (selection.size > 1) for (const l of selection) { const q = frameCorners(l).flatMap(c => [c.x, c.y]); selG.poly(q).stroke({ width: 1, color: 0xffffff, alpha: 0.7 }); }
@@ -1187,10 +1242,17 @@ function rename(n: Layer | Group) {
   if (v && v.trim()) { n.name = v.trim(); commit(); }
 }
 function eyeBtn(n: Node): string {
-  return `<button class="rb dup" tabindex="-1" aria-label="Dupliquer" title="Dupliquer"><svg class="ic"><use href="#i-dup"/></svg></button><button class="eye${visOf(n) ? '' : ' off'}" tabindex="-1" aria-label="Afficher / masquer"><svg class="ic"><use href="#i-${visOf(n) ? 'eye' : 'eye-off'}"/></svg></button>`;
+  const lk = (n as { locked?: boolean }).locked, inh = !lk && isLocked(n);
+  return `<button class="lk${lk ? ' on' : inh ? ' inh' : ''}" tabindex="-1" aria-label="Verrouiller / déverrouiller" title="Verrouiller / déverrouiller"><svg class="ic"><use href="#i-${lk || inh ? 'lock' : 'unlock'}"/></svg></button><button class="rb dup" tabindex="-1" aria-label="Dupliquer" title="Dupliquer"><svg class="ic"><use href="#i-dup"/></svg></button><button class="eye${visOf(n) ? '' : ' off'}" tabindex="-1" aria-label="Afficher / masquer"><svg class="ic"><use href="#i-${visOf(n) ? 'eye' : 'eye-off'}"/></svg></button>`;
 }
 function wireEye(li: HTMLElement, n: Node) {
   (li.querySelector('.dup') as HTMLElement).onclick = e => { e.stopPropagation(); dupNodes([n]); };
+  (li.querySelector('.lk') as HTMLElement).onclick = e => {
+    e.stopPropagation();
+    (n as { locked?: boolean }).locked = !(n as { locked?: boolean }).locked || undefined;
+    setSelection([...selection]); commit();
+    status(isLocked(n) ? 'Verrouillé : il ne peut plus être sélectionné ni modifié sur la feuille.' : 'Déverrouillé.');
+  };
   (li.querySelector('.eye') as HTMLElement).onclick = e => {
     e.stopPropagation();
     if (isGroup(n)) n.visible = !n.visible; else (n as Layer).visible = !(n as Layer).visible;
@@ -1206,7 +1268,7 @@ function pick(e: MouseEvent, ls: Layer[], primary: Layer) {
 }
 function rowBase(n: Node, depth: number, sel: boolean): HTMLLIElement {
   const li = document.createElement('li');
-  li.className = 'ly' + (sel ? ' sel' : '') + (shown(n) ? '' : ' hid'); li.draggable = true; li.tabIndex = 0; li.style.paddingLeft = 6 + depth * 16 + 'px';
+  li.className = 'ly' + (sel ? ' sel' : '') + (shown(n) ? '' : ' hid') + (isLocked(n) ? ' locked' : ''); li.draggable = true; li.tabIndex = 0; li.style.paddingLeft = 6 + depth * 16 + 'px';
   li.ondragstart = e => { dragNode = n; e.dataTransfer!.setData('text/plain', 'node'); e.dataTransfer!.effectAllowed = 'move'; li.classList.add('dragging'); };
   li.ondragend = () => { li.classList.remove('dragging'); dragNode = null; };
   li.ondragover = e => { if (dragNode) { e.preventDefault(); li.classList.add('over'); } };
@@ -1245,7 +1307,7 @@ function renderLayers() {
 }
 $('layer-list').ondragover = e => { if (dragNode) e.preventDefault(); };
 $('layer-list').ondrop = e => { e.preventDefault(); dropOn(null); };
-const treeSig = (g: Group): string => g.children.map(c => (isGroup(c) ? `[${c.id}:${c.name}:${c.collapsed ? 1 : 0}:${c.visible ? 1 : 0}:${fullySel(c) ? 1 : 0}${treeSig(c)}]` : `${c.id}:${(c as Layer).name}:${(c as Layer).visible ? 1 : 0}:${bid((c as Layer).base)}${selection.has(c as Layer) ? '*' : ''}`)).join(',');
+const treeSig = (g: Group): string => g.children.map(c => (isGroup(c) ? `[${c.id}:${c.name}:${c.collapsed ? 1 : 0}:${c.visible ? 1 : 0}${c.locked ? 'L' : ''}:${fullySel(c) ? 1 : 0}${treeSig(c)}]` : `${c.id}:${(c as Layer).name}:${(c as Layer).visible ? 1 : 0}${(c as Layer).locked ? 'L' : ''}:${bid((c as Layer).base)}${selection.has(c as Layer) ? '*' : ''}`)).join(',');
 function syncPanels() {
   const sig = treeSig(root);
   if (sig !== layersSig) { layersSig = sig; renderLayers(); }
@@ -1572,7 +1634,7 @@ function applyAnim() {
   for (const l of layers) {
     let r0 = restPose.get(l);
     if (!r0) { r0 = { x: l.box.x, y: l.box.y, r: l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y }; restPose.set(l, r0); }
-    let x = r0.x, y = r0.y, r = r0.r, ball = 0, sc = 1, vis = true;
+    let x = r0.x, y = r0.y, r = r0.r, ball = 0, sc = 1, alpha = 1;
     const step = (n: Node, c: Pt | null) => {   // c : centre de rotation et d'échelle (centre du groupe), null pour l'élément lui-même
       const a = animOf(n);
       if (a && a.pts.length >= 2) {
@@ -1584,12 +1646,12 @@ function applyAnim() {
       if (tl) {
         const v = evalTL(tl, animT), d = (v.rot * Math.PI) / 180;
         if (c && (d || v.scale !== 1)) { const rx = x - c.x, ry = y - c.y, cs = Math.cos(d), sn = Math.sin(d); x = c.x + (rx * cs - ry * sn) * v.scale; y = c.y + (rx * sn + ry * cs) * v.scale; }
-        r += d; sc *= v.scale; x += v.x; y += v.y; ball = Math.max(ball, v.crumple); if (v.vis < 0.5) vis = false;
+        r += d; sc *= v.scale; x += v.x; y += v.y; ball = Math.max(ball, v.crumple); alpha = Math.min(alpha, Math.max(0, Math.min(1, v.vis)));
       }
     };
     step(l, null);
     for (let g: Group | null = l.parent; g && g !== root; g = g.parent) step(g, groupRestCenter(g));
-    l.box.position.set(x, y); l.box.rotation = r; l.box.scale.set(r0.sx * sc, r0.sy * sc); l.box.visible = shown(l) && vis; setCrumple(l, ball);
+    l.box.position.set(x, y); l.box.rotation = r; l.box.scale.set(r0.sx * sc, r0.sy * sc); l.box.visible = shown(l) && alpha > 0.002; l.box.alpha = alpha; setCrumple(l, ball);
   }
 }
 const anyAnim = () => layers.some(l => l.anim || l.tl) || (() => { let f = false; const w = (g: Group) => { for (const c of g.children) if (isGroup(c)) { if (c.anim || c.tl) f = true; w(c); } }; w(root); return f; })();
@@ -1610,7 +1672,7 @@ function startPlay() {
 function pausePlay() { if (!playing) startPlay(); paused = true; playUI(); status('En pause : ◆ ajoute une image clé ; la poignée ronde fait pivoter.'); }
 function stopPlay() {
   if (!playing) return;
-  for (const [l, p] of restPose) { l.box.position.set(p.x, p.y); l.box.rotation = p.r; l.box.scale.set(p.sx, p.sy); setCrumple(l, 0); }
+  for (const [l, p] of restPose) { l.box.position.set(p.x, p.y); l.box.rotation = p.r; l.box.scale.set(p.sx, p.sy); l.box.alpha = 1; setCrumple(l, 0); }
   restPose.clear(); groupRest.clear(); playing = false; paused = false; applyVis(); playUI(); status('Lecture arrêtée.');
 }
 $('btn-play').onclick = () => {
@@ -1825,9 +1887,22 @@ function selectNode(n: Node, add = false) {
   if (add) { ls.forEach(x => selection.add(x)); setSelection([...selection], ls[ls.length - 1]); } else setSelection(ls, ls[ls.length - 1]);
 }
 function tlTimeAt(clientX: number) { const r = $('tl-stage').getBoundingClientRect(); return clampT((clientX - r.left - NAMEW) / tlPps); }
+/** Toutes les images clés du projet (pour l'aimantation dans la timeline). */
+function allKeyTimes(): number[] {
+  const set = new Set<number>([0]), add = (n: Node) => nodeKeyTimes(n).forEach(t => set.add(t));
+  layers.forEach(add); const w = (g: Group) => { for (const c of g.children) if (isGroup(c)) { add(c); w(c); } }; w(root);
+  return [...set];
+}
+/** Colle le temps `t` à l'image clé la plus proche (à 7 px près), si l'aimantation est active. */
+function snapTime(t: number, skip?: number): number {
+  let best = 7 / tlPps, out = t;
+  for (const k of allKeyTimes()) if (skip === undefined || Math.abs(k - skip) > 1e-6) if (Math.abs(k - t) < best) { best = Math.abs(k - t); out = k; }
+  return out;
+}
 function startScrub(e: PointerEvent) {
-  e.preventDefault(); playheadTo(tlTimeAt(e.clientX));
-  const mv = (ev: PointerEvent) => playheadTo(tlTimeAt(ev.clientX));
+  const at = (ev: PointerEvent) => (snapOn && !ev.shiftKey ? snapTime(tlTimeAt(ev.clientX)) : tlTimeAt(ev.clientX));
+  e.preventDefault(); playheadTo(at(e));
+  const mv = (ev: PointerEvent) => playheadTo(at(ev));
   addEventListener('pointermove', mv); addEventListener('pointerup', () => removeEventListener('pointermove', mv), { once: true });
 }
 const curKF = (): KF | null => (selKF ? (tlOf(selKF.node)?.[selKF.prop] ?? []).find(k => Math.abs(k.t - selKF!.t) < 1e-6) ?? null : null);
@@ -1844,7 +1919,8 @@ function startKFDrag(e: PointerEvent, node: Node, prop: PropId, t0: number) {
   const mv = (ev: PointerEvent) => {
     if (!moved && Math.abs(ev.clientX - x0) < 3) return;
     moved = true;
-    const nt = clampT(t0 + (ev.clientX - x0) / tlPps), to = ev.shiftKey ? nt : Math.round(nt * 20) / 20;   // pas de 0,05 s (Maj = libre)
+    const nt = clampT(t0 + (ev.clientX - x0) / tlPps), sn = snapOn && !ev.shiftKey ? snapTime(nt, t0) : nt;
+    const to = ev.shiftKey ? nt : sn !== nt ? sn : Math.round(nt * 20) / 20;   // aimanté sur une autre image clé ; sinon pas de 0,05 s (Maj = libre)
     if (selKF && moveKey(node, prop, selKF.t, to)) { selKF.t = to; animT = to; }
   };
   addEventListener('pointermove', mv);
@@ -1973,6 +2049,64 @@ function jumpKey(dir: 1 | -1) {
 }
 $('btn-kprev').onclick = () => jumpKey(-1);
 $('btn-knext').onclick = () => jumpKey(1);
+
+// ---- effets prêts à l'emploi : des images clés générées à partir de la tête de lecture, que l'on peut ensuite retoucher une à une
+type FxTrack = { t: number; v: number; w?: number; e?: KEase }[];
+interface FxBase { x: number; y: number; rot: number; scale: number }
+interface Fx { id: string; name: string; gen: (b: FxBase, d: number) => Partial<Record<PropId, FxTrack>> }
+const pop = (extra: FxTrack = []): FxTrack => [{ t: 0, v: 0, e: 'hold' }, { t: 0.05, v: 1, e: 'hold' }, ...extra];
+const FX: Fx[] = [
+  { id: 'fadein', name: 'Apparition en fondu', gen: (b, d) => ({ vis: [{ t: 0, v: 0, e: 'smooth' }, { t: d, v: 1, e: 'hold' }] }) },
+  { id: 'fadeout', name: 'Disparition en fondu', gen: (b, d) => ({ vis: [{ t: 0, v: 1, e: 'smooth' }, { t: d, v: 0, e: 'hold' }] }) },
+  { id: 'popin', name: 'Surgit (zoom avec rebond)', gen: (b, d) => ({ vis: pop(), scale: [{ t: 0, v: 0.01 }, { t: 0.6 * d, v: b.scale * 1.18 }, { t: d, v: b.scale }] }) },
+  { id: 'popout', name: 'S\u2019évanouit (zoom arrière)', gen: (b, d) => ({ scale: [{ t: 0, v: b.scale }, { t: 0.35 * d, v: b.scale * 1.15 }, { t: d, v: 0.01 }], vis: [{ t: 0, v: 1, e: 'hold' }, { t: d, v: 0, e: 'hold' }] }) },
+  { id: 'spinin', name: 'Arrive en tournant', gen: (b, d) => ({ vis: pop(), rot: [{ t: 0, v: b.rot - 360 }, { t: d, v: b.rot }], scale: [{ t: 0, v: 0.01 }, { t: d, v: b.scale }] }) },
+  { id: 'drop', name: 'Chute et rebonds', gen: (b, d) => ({ pos: [{ t: 0, v: b.x, w: b.y - Math.max(PH, 900) }, { t: 0.55 * d, v: b.x, w: b.y }, { t: 0.7 * d, v: b.x, w: b.y - 70 }, { t: 0.85 * d, v: b.x, w: b.y }, { t: 0.93 * d, v: b.x, w: b.y - 18 }, { t: d, v: b.x, w: b.y }] }) },
+  { id: 'bounce', name: 'Rebondit', gen: (b, d) => ({ pos: [0, 0.2, 0.4, 0.55, 0.7, 0.8, 1].map((f, i) => ({ t: f * d, v: b.x, w: b.y - [0, 70, 0, 34, 0, 12, 0][i] })) }) },
+  { id: 'pulse', name: 'Battement (pulsation)', gen: (b, d) => ({ scale: [{ t: 0, v: b.scale }, { t: 0.15 * d, v: b.scale * 1.25 }, { t: 0.3 * d, v: b.scale }, { t: 0.45 * d, v: b.scale * 1.18 }, { t: d, v: b.scale }] }) },
+  { id: 'shake', name: 'Tremble', gen: (b, d) => ({ pos: [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => ({ t: (i / 8) * d, v: b.x + (i === 0 || i === 8 ? 0 : (i % 2 ? 1 : -1) * 16 * (1 - i / 9)), w: b.y, e: 'linear' as KEase })) }) },
+  { id: 'swing', name: 'Balancier', gen: (b, d) => ({ rot: [{ t: 0, v: b.rot }, { t: 0.25 * d, v: b.rot + 15 }, { t: 0.75 * d, v: b.rot - 15 }, { t: d, v: b.rot }] }) },
+  { id: 'blink', name: 'Clignote', gen: (b, d) => ({ vis: [1, 0, 1, 0, 1, 0, 1].map((v, i) => ({ t: (i / 6) * d, v, e: 'hold' as KEase })) }) },
+];
+/** Pose les images clés d'un effet pour `n`, à partir de t0 : remplace celles de la plage couverte, garde l'état d'avant. */
+function applyFx(n: Node, fx: Fx, t0: number, d: number) {
+  const tl0 = tlOf(n), v0 = evalTL(tl0, t0), tracks = fx.gen({ x: v0.x, y: v0.y, rot: v0.rot, scale: v0.scale }, d);
+  const tl: TL = { ...(tl0 ?? {}) };
+  for (const p of PROPS) {
+    const track = tracks[p.id]; if (!track) continue;
+    const list = (tl[p.id] ?? []).filter(k => k.t < t0 - 0.001 || k.t > t0 + d + 0.001);
+    if (!list.some(k => k.t < t0 - 0.001) && t0 > 0.05) list.unshift({ t: 0, v: track[0].v, ...(track[0].w !== undefined ? { w: track[0].w } : {}), e: 'hold' });
+    for (const k of track) list.push({ t: t0 + k.t, v: k.v, ...(k.w !== undefined ? { w: k.w } : {}), e: k.e ?? defEase(p.id) });
+    list.sort((a, b) => a.t - b.t); tl[p.id] = list;
+  }
+  setTl(n, tl);
+}
+const fxPop = $('fxpop'), fxGrid = $('fx-grid');
+for (const fx of FX) {
+  const b = document.createElement('button'); b.className = 'ib fxb'; b.dataset.tip = fx.name; b.dataset.pos = 'top';
+  b.innerHTML = `<svg class="ic"><use href="#i-fx-${fx.id}"/></svg>`;
+  b.onclick = () => {
+    const ns = selectedNodes(); if (!ns.length) { status("Sélectionne d'abord un élément ou un groupe."); return; }
+    if (!playing) playheadTo(animT); else if (!paused) pausePlay();
+    const d = +$<HTMLInputElement>('fx-dur').value;
+    for (const n of ns) { applyFx(n, fx, animT, d); tlOpen.add(n); }
+    tlSig = ''; commit(); status(`« ${fx.name} » posé à ${animT.toFixed(2)} s sur ${d.toFixed(1)} s : les images clés restent modifiables dans la timeline.`);
+    closeFxPop();
+  };
+  fxGrid.appendChild(b);
+}
+function closeFxPop() { fxPop.classList.remove('open'); $('btn-fx').classList.remove('on'); }
+$('btn-fx').onclick = e => {
+  e.stopPropagation();
+  if (fxPop.classList.contains('open')) { closeFxPop(); return; }
+  const r = $('btn-fx').getBoundingClientRect();
+  fxPop.style.left = Math.min(r.left, innerWidth - 270) + 'px'; fxPop.style.bottom = innerHeight - r.top + 8 + 'px';
+  fxPop.classList.add('open'); $('btn-fx').classList.add('on');
+};
+addEventListener('pointerdown', e => { if (fxPop.classList.contains('open') && !fxPop.contains(e.target as HTMLElement) && !(e.target as HTMLElement).closest('#btn-fx')) closeFxPop(); });
+$<HTMLInputElement>('fx-dur').oninput = e => { const r = e.target as HTMLInputElement; $('v-fx-dur').textContent = (+r.value).toFixed(1) + ' s'; r.style.setProperty('--p', ((+r.value - +r.min) / (+r.max - +r.min)) * 100 + '%'); };
+$<HTMLInputElement>('fx-dur').dispatchEvent(new Event('input'));
+
 $('btn-tlkey').onclick = () => {
   const ns = selectedNodes(); if (!ns.length) { status("Sélectionne d'abord un élément ou un groupe."); return; }
   if (!playing) playheadTo(animT); else if (!paused) pausePlay();
@@ -2016,7 +2150,7 @@ function syncTimeline() {
   if (k && selKF) {
     const p = selKF.prop;
     ed.dataset.prop = p; setNum('kf-t', k.t.toFixed(2) + ' s');
-    setNum('kf-v', p === 'pos' ? Math.round(k.v) + ' px' : p === 'rot' ? Math.round(k.v * 10) / 10 + '°' : p === 'scale' ? k.v.toFixed(2) + ' ×' : p === 'crumple' ? Math.round(k.v * 100) + ' %' : k.v > 0.5 ? 'visible' : 'caché');
+    setNum('kf-v', p === 'pos' ? Math.round(k.v) + ' px' : p === 'rot' ? Math.round(k.v * 10) / 10 + '°' : p === 'scale' ? k.v.toFixed(2) + ' ×' : p === 'crumple' ? Math.round(k.v * 100) + ' %' : k.v >= 0.99 ? 'visible' : k.v <= 0.01 ? 'caché' : Math.round(k.v * 100) + ' %');
     if (p === 'pos') setNum('kf-w', Math.round(k.w ?? 0) + ' px');
     $('btn-kfease').querySelector('use')!.setAttribute('href', '#i-ease-' + (k.e ?? 'smooth'));
     $('btn-kfease').dataset.tip = ({ linear: 'Vitesse constante vers l’image clé suivante', smooth: 'Départ et arrivée en douceur', hold: 'Palier : la valeur reste jusqu’à l’image clé suivante' } as Record<KEase, string>)[k.e ?? 'smooth'];

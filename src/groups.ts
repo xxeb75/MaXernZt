@@ -1,10 +1,10 @@
 // Arbre de groupes et sous-groupes. L'ordre des enfants va de l'arrière vers l'avant ;
 // l'ordre d'empilement des calques est le parcours en profondeur de l'arbre.
-export interface Group { id: number; name: string; collapsed: boolean; visible: boolean; anim?: unknown; tl?: unknown; children: Node[]; parent: Group | null }
+export interface Group { id: number; name: string; collapsed: boolean; visible: boolean; locked?: boolean; anim?: unknown; tl?: unknown; children: Node[]; parent: Group | null }
 export interface Leaf { id: number; parent: Group }
 export type Node = Leaf | Group;
 /** Forme sérialisée (historique, fichier projet). */
-export type TNode = { l: number } | { g: number; name: string; collapsed: boolean; v?: boolean; a?: unknown; t?: unknown; c: TNode[] };
+export type TNode = { l: number } | { g: number; name: string; collapsed: boolean; v?: boolean; k?: boolean; a?: unknown; t?: unknown; c: TNode[] };
 
 export const isGroup = (n: Node): n is Group => 'children' in n;
 
@@ -53,11 +53,11 @@ export function contains(g: Group, n: Node): boolean {
 }
 
 export function serialize(g: Group): TNode[] {
-  return g.children.map((c): TNode => (isGroup(c) ? { g: c.id, name: c.name, collapsed: c.collapsed, v: c.visible, a: c.anim, t: c.tl, c: serialize(c) } : { l: c.id }));
+  return g.children.map((c): TNode => (isGroup(c) ? { g: c.id, name: c.name, collapsed: c.collapsed, v: c.visible, k: c.locked || undefined, a: c.anim, t: c.tl, c: serialize(c) } : { l: c.id }));
 }
-export function buildTree(t: TNode[], parent: Group, leafOf: (id: number) => Leaf | undefined, mk: (id: number, name: string, collapsed: boolean, visible: boolean, anim: unknown, tl: unknown) => Group) {
+export function buildTree(t: TNode[], parent: Group, leafOf: (id: number) => Leaf | undefined, mk: (id: number, name: string, collapsed: boolean, visible: boolean, anim: unknown, tl: unknown, locked: boolean) => Group) {
   for (const n of t) {
     if ('l' in n) { const l = leafOf(n.l); if (l) attach(l, parent); }
-    else { const g = mk(n.g, n.name, n.collapsed, n.v !== false, n.a, n.t); attach(g, parent); buildTree(n.c, g, leafOf, mk); }
+    else { const g = mk(n.g, n.name, n.collapsed, n.v !== false, n.a, n.t, !!n.k); attach(g, parent); buildTree(n.c, g, leafOf, mk); }
   }
 }

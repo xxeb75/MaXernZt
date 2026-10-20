@@ -298,3 +298,20 @@ input.num:focus { outline: none; border-color: var(--accent); background: #0f111
 #tl-grip:hover::after, #tl-grip:active::after { background: var(--accent); }
 #tl-grip::before { content: ""; position: absolute; left: 0; right: 0; top: 4px; height: 1px; background: transparent; }
 #tl-grip:hover::before { background: rgba(242,177,52,.5); }
+
+/* verrouillage des calques */
+.lk { display: grid; place-items: center; width: 26px; height: 26px; flex: none; border-radius: 5px; color: var(--dim); opacity: 0; }
+.ly:hover .lk, .ly:focus-within .lk, .lk.on, .lk.inh { opacity: 1; }
+.lk .ic { width: 16px; height: 16px; }
+.lk:hover { background: rgba(255,255,255,.1); color: var(--text); }
+.lk.on { color: var(--accent); } .lk.inh { color: var(--dim); opacity: .6; }
+.ly.locked .th, .ly.locked .nm { opacity: .6; }
+/* effets prêts à l'emploi */
+#fxpop { position: fixed; z-index: 90; display: none; flex-direction: column; gap: 10px; width: 252px; padding: 10px; border-radius: 10px; background: #0f1113; box-shadow: 0 0 0 1px var(--line), 0 12px 32px rgba(0,0,0,.55); }
+#fxpop.open { display: flex; }
+#fx-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+#fx-grid .fxb { width: auto; height: 44px; background: var(--raise); }
+#fx-grid .fxb .ic { width: 24px; height: 24px; }
+#fx-grid .fxb:hover { background: var(--accent); color: var(--on-accent); }
+#fxpop .ctl { padding: 0 4px; } #fxpop .ctl input[type=range] { flex: 1; width: auto; }
+.fxbtn.on { background: var(--accent); color: var(--on-accent); }

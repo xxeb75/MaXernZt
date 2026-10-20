@@ -56,6 +56,12 @@ Panneau en bas, que l'on étire vers le haut en tirant sa poignée (double-clic 
 - Glisser un losange pour le décaler (pas de 0,05 s, Maj = libre) ; l'éditeur permet de saisir l'instant et la valeur au clavier, de choisir l'interpolation (constante, douce, palier) ou de supprimer (Suppr).
 - Durée de la timeline : automatique ou saisie ; zoom au curseur ou Ctrl+molette. Tout est enregistré dans le projet, lu à l'export vidéo et dans le manifeste.
 
+## Aimantation, verrouillage, effets
+
+- **Aimantation** (icône aimant, à droite de la barre d'options, mémorisée) : en déplaçant, les bords et le centre de l'élément se collent à ceux de la feuille et des autres éléments (guides roses) ; la rotation se cale par crans de 15° ; dans la timeline, la tête de lecture et les images clés se collent aux autres images clés. Alt désactive l'aimantation le temps du geste.
+- **Calques verrouillés** : cadenas dans le panneau des calques (éléments et groupes) ou Ctrl+L sur la sélection. Un élément verrouillé ne se sélectionne plus et ne bouge plus sur la feuille (les clics le traversent), mais il reste animé à la lecture ; l'état est enregistré dans le projet.
+- **Effets prêts à l'emploi** (icône étincelles de la timeline) : apparition / disparition en fondu, surgit, s'évanouit, arrive en tournant, chute et rebonds, rebondit, battement, tremble, balancier, clignote. L'effet pose des images clés à partir de la tête de lecture, sur la durée choisie, pour la sélection ; elles restent modifiables une à une. La piste Visibilité gère maintenant une opacité continue (fondus).
+
 ## Animation
 
 Outil trajectoire (P) : sélectionne un élément (ou un groupe dans le panneau), dessine le chemin à partir de lui ; le chemin est enregistré avec l'élément ou le groupe (les chemins s'additionnent le long de la hiérarchie). ▶ / Espace = lecture et pause, ■ / Échap = arrêt. Réglages : durée, boucle ou aller-retour, vitesse constante ou douce, orienter dans le sens du trajet, rotation continue (nombre de tours sur lui-même par cycle, négatif = sens inverse) ; le bouton flèche circulaire à gauche de la barre du bas fait tourner un élément ou un groupe sur place, sans trajectoire.
