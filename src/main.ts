@@ -18,7 +18,7 @@ interface BallFx { spr: Sprite; sh: Sprite; fold: Sprite; frames: Texture[]; k: 
 /** Accessoire généré (scotch, peinture, punaise…) : type et réglages, pour pouvoir le modifier par double-clic. */
 interface AccSpec { kind: string; p: AccParams }
 interface Layer extends Leaf {
-  acc?: AccSpec; anim?: Anim; ball?: BallFx; name: string; visible: boolean; base: HTMLCanvasElement; baked: HTMLCanvasElement;
+  tl?: TL; acc?: AccSpec; anim?: Anim; ball?: BallFx; name: string; visible: boolean; base: HTMLCanvasElement; baked: HTMLCanvasElement;
   border: number; shadow: number; rough: number; letter?: LetterSpec;
   box: Container; sprite: Sprite; shade: Sprite;
 }
@@ -166,14 +166,14 @@ function hit(l: Layer, p: Pt): boolean {
 }
 
 // ---- historique (annuler / rétablir) : instantanés légers, les canvas de base sont immuables
-interface LState { id: number; name: string; visible: boolean; anim?: Anim; acc?: AccSpec; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
-interface Snap { layers: LState[]; bg: string; tree: TNode[]; sel: number[]; paper?: [number, number] }
+interface LState { id: number; name: string; visible: boolean; anim?: Anim; tl?: TL; acc?: AccSpec; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
+interface Snap { layers: LState[]; bg: string; tree: TNode[]; sel: number[]; paper?: [number, number]; dur?: number | null }
 const snap = (): Snap => ({
-  layers: layers.map(l => ({ id: l.id, name: l.name, visible: l.visible, anim: l.anim, acc: l.acc, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: restPose.get(l)?.x ?? l.box.x, y: restPose.get(l)?.y ?? l.box.y, rot: restPose.get(l)?.r ?? l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y })),
-  paper: [PW, PH], bg: bgColor, tree: serialize(root), sel: [...selection].filter(l => l !== selected).concat(selected ? [selected] : []).map(l => l.id),
+  layers: layers.map(l => ({ id: l.id, name: l.name, visible: l.visible, anim: l.anim, tl: l.tl, acc: l.acc, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: restPose.get(l)?.x ?? l.box.x, y: restPose.get(l)?.y ?? l.box.y, rot: restPose.get(l)?.r ?? l.box.rotation, sx: restPose.get(l)?.sx ?? l.box.scale.x, sy: restPose.get(l)?.sy ?? l.box.scale.y })),
+  paper: [PW, PH], dur: tlDurManual, bg: bgColor, tree: serialize(root), sel: [...selection].filter(l => l !== selected).concat(selected ? [selected] : []).map(l => l.id),
 });
-const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.paper?.join() === b.paper?.join() && a.layers.length === b.layers.length && JSON.stringify(a.tree) === JSON.stringify(b.tree) &&
-  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.visible === v.visible && u.anim === v.anim && u.acc === v.acc && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
+const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.paper?.join() === b.paper?.join() && a.dur === b.dur && a.layers.length === b.layers.length && JSON.stringify(a.tree) === JSON.stringify(b.tree) &&
+  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.visible === v.visible && u.anim === v.anim && u.tl === v.tl && u.acc === v.acc && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
 const hist: Snap[] = []; let hi = -1, soon = 0;
 function updHistUI() { ($('btn-undo') as HTMLButtonElement).disabled = hi <= 0; ($('btn-redo') as HTMLButtonElement).disabled = hi >= hist.length - 1; }
 function commit() {
@@ -186,7 +186,7 @@ function commit() {
 }
 const commitSoon = () => { clearTimeout(soon); soon = window.setTimeout(commit, 400); };
 function restore(s: Snap) {
-  samClear();
+  samClear(); tlDurManual = s.dur ?? null;
   if (s.paper && (s.paper[0] !== PW || s.paper[1] !== PH)) { PW = s.paper[0]; PH = s.paper[1]; drawPaper(); fitView(); syncFmt(); }
   const want = new Set(s.layers.map(x => x.id));
   for (const l of [...layers]) if (!want.has(l.id)) removeLayer(l);
@@ -202,12 +202,12 @@ function restore(s: Snap) {
       l.box.position.set(st.x, st.y); l.box.rotation = st.rot; l.box.scale.set(st.sx, st.sy);
       if (dirty) refresh(l);
     }
-    l.letter = st.letter; l.visible = st.visible !== false; l.anim = st.anim; l.acc = st.acc;
+    l.letter = st.letter; l.visible = st.visible !== false; l.anim = st.anim; l.tl = st.tl; l.acc = st.acc;
     ordered.push(l);
   }
   root.children = [];
   const byId2 = new Map(ordered.map(l => [l.id, l]));
-  buildTree(s.tree, root, id => byId2.get(id), (id, name, collapsed, visible, anim) => { groupSeq = Math.max(groupSeq, id + 1); return { id, name, collapsed, visible, anim, children: [], parent: root }; });
+  buildTree(s.tree, root, id => byId2.get(id), (id, name, collapsed, visible, anim, tl) => { groupSeq = Math.max(groupSeq, id + 1); return { id, name, collapsed, visible, anim, tl, children: [], parent: root }; });
   for (const l of ordered) if (!l.parent || !hasAncestorRoot(l)) attach(l, root);
   reflow();
   bgColor = s.bg; drawPaper(); $<HTMLInputElement>('bg').value = bgColor;
@@ -422,12 +422,12 @@ $('btn-del').onclick = () => { if (!selection.size) { status('Sélectionne un ca
 
 function cloneNode(n: Node, parent: Group, dx: number, dy: number, out: Layer[]): Node {
   if (isGroup(n)) {
-    const g: Group = { id: groupSeq++, name: n.name, collapsed: n.collapsed, visible: n.visible, anim: n.anim, children: [], parent };
+    const g: Group = { id: groupSeq++, name: n.name, collapsed: n.collapsed, visible: n.visible, anim: n.anim, tl: n.tl, children: [], parent };
     parent.children.push(g); n.children.forEach(c => cloneNode(c, g, dx, dy, out)); return g;
   }
   const l = n as Layer;
   const nl = addLayer(l.base, l.name, { pos: { x: l.box.x + dx, y: l.box.y + dy }, rot: l.box.rotation, scale: { x: l.box.scale.x, y: l.box.scale.y } }, { border: l.border, shadow: l.shadow, rough: l.rough });
-  nl.letter = l.letter; nl.visible = l.visible; nl.anim = l.anim; nl.acc = l.acc; detach(nl); attach(nl, parent); out.push(nl);
+  nl.letter = l.letter; nl.visible = l.visible; nl.anim = l.anim; nl.tl = l.tl; nl.acc = l.acc; detach(nl); attach(nl, parent); out.push(nl);
   return nl;
 }
 /** Duplique des éléments ou des groupes (la copie, décalée, se place juste au-dessus de l'original et devient la sélection). */
@@ -720,7 +720,7 @@ $('btn-video').onclick = () => {
   if (vidPop.classList.contains('open')) { closeVidPop(); return; }
   if (!anyAnim()) { toast('Aucune animation à exporter', "Dessine d'abord une trajectoire avec l'outil trajectoire (P).", 'warn'); return; }
   if (!videoSupported()) { toast('Export vidéo indisponible', "Cette fenêtre ne sait pas encoder de vidéo.", 'err'); return; }
-  $<HTMLInputElement>('vid-dur').value = animCycleMax().toFixed(1).replace('.0', '') + ' s';
+  $<HTMLInputElement>('vid-dur').value = tlDuration().toFixed(1).replace('.0', '') + ' s';
   vidPop.classList.add('open'); $('btn-video').classList.add('on'); syncVid();
 };
 vidPop.addEventListener('click', e => {
@@ -794,12 +794,12 @@ $('btn-export-layers').onclick = async () => {
   stopPlay();
   const name = (l: Layer, z: number) => `${String(z).padStart(2, '0')}_${l.name.replace(/\W+/g, '_')}.png`;
   const groupPath = (l: Layer) => { const names: string[] = []; for (let g: Group | null = l.parent; g && g !== root; g = g.parent) names.unshift(g.name); return names.join('/'); };
-  const hier = (g: Group): unknown[] => g.children.map(c => (isGroup(c) ? { group: c.name, anim: animJson(c.anim as Anim | undefined), children: hier(c) } : { layer: name(c as Layer, layers.indexOf(c as Layer)).replace('.png', '') }));
+  const hier = (g: Group): unknown[] => g.children.map(c => (isGroup(c) ? { group: c.name, anim: animJson(c.anim as Anim | undefined), timeline: c.tl ?? null, children: hier(c) } : { layer: name(c as Layer, layers.indexOf(c as Layer)).replace('.png', '') }));
   const manifest = {
     canvas: [PW, PH],
-    hierarchy: hier(root),
+    hierarchy: hier(root), duration: tlDuration(),
     layers: layers.map((l, z) => ({
-      group: groupPath(l), visible: shown(l), anim: animJson(l.anim),
+      group: groupPath(l), visible: shown(l), anim: animJson(l.anim), timeline: l.tl ?? null,
       name: name(l, z).replace('.png', ''), file: 'layers/' + name(l, z), w: l.baked.width, h: l.baked.height,
       x: Math.round(l.box.x), y: Math.round(l.box.y), rotation: +(l.box.rotation * 180 / Math.PI).toFixed(2),
       scale: [+l.box.scale.x.toFixed(3), +l.box.scale.y.toFixed(3)], z,
@@ -845,9 +845,9 @@ async function saveProject(asNew = false) {
   const out = layers.map(l => {
     let id = ids.get(l.base);
     if (!id) { id = 'img' + ids.size; ids.set(l.base, id); images[id] = l.base.toDataURL('image/png'); }
-    return { id: l.id, name: l.name, visible: l.visible, anim: l.anim, acc: l.acc, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
+    return { id: l.id, name: l.name, visible: l.visible, anim: l.anim, tl: l.tl, acc: l.acc, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
   });
-  const blob = new Blob([JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, tree: serialize(root), layers: out, images })], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, tree: serialize(root), duration: tlDurManual, layers: out, images })], { type: 'application/json' });
   const fileName = projectName + '.maxernzt';
   if (tauri) {
     try {
@@ -901,9 +901,9 @@ async function loadProject(f: File, path?: string) {
     if (d.format !== 'maxernzt' || !Array.isArray(d.layers)) throw new Error('fichier non reconnu');
     const imgs = new Map<string, HTMLCanvasElement>();
     for (const [id, url] of Object.entries<string>(d.images)) imgs.set(id, await decode(url));
-    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, anim: l.anim, acc: l.acc, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
+    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, anim: l.anim, tl: l.tl, acc: l.acc, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
-    restore({ paper: Array.isArray(d.paper) && d.paper.length === 2 ? [d.paper[0], d.paper[1]] : undefined, layers: ls, bg: d.bg ?? bgColor, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
+    restore({ dur: typeof d.duration === 'number' ? d.duration : null, paper: Array.isArray(d.paper) && d.paper.length === 2 ? [d.paper[0], d.paper[1]] : undefined, layers: ls, bg: d.bg ?? bgColor, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); projectPath = path ?? null; projectHandle = null; commit(); dirty = false;
     if (path) $('btn-save').dataset.tip = `Enregistrer (Ctrl+S) — ${path}`;
     status(`Projet « ${projectName} » ouvert (${ls.length} calques).`); toast('Projet ouvert', `${projectName} — ${ls.length} calques`, 'ok');
@@ -931,7 +931,7 @@ addEventListener('beforeunload', e => { if (dirty && layers.length) e.preventDef
 // poignées : coins = taille (proportionnelle), rond au-dessus = rotation (Maj = pas de 15°) ; pour un calque comme pour une sélection
 type HandleKind = 'nw' | 'ne' | 'se' | 'sw' | 'rot';
 interface Item { l: Layer; x: number; y: number; r: number; sx: number; sy: number }
-interface Xf { kind: HandleKind; items: Item[]; cx: number; cy: number; d0: number; a0: number }
+interface Xf { kind: HandleKind; items: Item[]; cx: number; cy: number; d0: number; a0: number; rec?: RecBase | null }
 const frameOf = (l: Layer) => { const b = l.border * 1.3; return { x0: PAD - b, y0: PAD - b, x1: PAD + l.base.width + b, y1: PAD + l.base.height + b }; };
 const frameCorners = (l: Layer): Pt[] => { const f = frameOf(l); return [{ x: f.x0, y: f.y0 }, { x: f.x1, y: f.y0 }, { x: f.x1, y: f.y1 }, { x: f.x0, y: f.y1 }].map(c => l.box.toGlobal(c)); };
 function handlePts(l: Layer): Record<HandleKind, Pt> {
@@ -968,7 +968,7 @@ function applyDelta(k: number, dth: number) {
   }
 }
 let xf: Xf | null = null;
-let drag: { items: Item[]; sx: number; sy: number; moved: boolean; collapse: Layer[] | null; hit: Layer } | null = null;
+let drag: { items: Item[]; sx: number; sy: number; moved: boolean; collapse: Layer[] | null; hit: Layer; rec?: RecBase | null } | null = null;
 let marq: { x0: number; y0: number; x1: number; y1: number; add: boolean } | null = null;
 let pan: { sx: number; sy: number; vx: number; vy: number } | null = null, path: Pt[] | null = null;
 const cv = app.canvas;
@@ -989,8 +989,8 @@ cv.addEventListener('pointerdown', e => {
   const p = pos(e); cv.setPointerCapture(e.pointerId); closeTextPop();
   if (e.button === 1 || e.button === 2) { pan = { sx: p.x, sy: p.y, vx: view.x, vy: view.y }; return; }
   if (playing) {
-    if (paused && hitHandle(p) === 'rot' && activeKey()) { startKeyRot(p); return; }  // en pause sur une image clé : la poignée ronde règle la rotation
-    stopPlay();                                                                       // tout autre clic reprend l'édition normale
+    if (paused && !recording && hitHandle(p) === 'rot' && activeKey()) { startKeyRot(p); return; }  // en pause sur une image clé : la poignée ronde règle la rotation
+    if (!(paused && recording)) stopPlay();   // tout autre clic reprend l'édition normale (sauf en enregistrement)
   }
   if (tool === 'sam') {
     const w = toWorld(p.x, p.y);
@@ -1002,7 +1002,9 @@ cv.addEventListener('pointerdown', e => {
   const kind = hitHandle(p);
   if (kind) {
     const c = selCenterWorld();
-    xf = { kind, items: mkItems(), cx: c.x, cy: c.y, d0: Math.hypot(w.x - c.x, w.y - c.y) || 1, a0: Math.atan2(w.y - c.y, w.x - c.x) };
+    const rec = recStart();
+    if (rec && rec.nodes.length > 1) { status("Enregistrement : sélectionne un seul élément (ou un groupe) pour le tourner ou l'agrandir."); return; }
+    xf = { kind, items: mkItems(), cx: c.x, cy: c.y, d0: Math.hypot(w.x - c.x, w.y - c.y) || 1, a0: Math.atan2(w.y - c.y, w.x - c.x), rec };
     return;
   }
   let hl: Layer | null = null;
@@ -1018,8 +1020,9 @@ cv.addEventListener('pointerdown', e => {
     }
     let collapse: Layer[] | null = null;
     if (!selection.has(hl)) setSelection(ls, hl); else if (selection.size > 1) collapse = ls;
-    if (!collapse) toTop(node);
-    drag = { items: mkItems(), sx: w.x, sy: w.y, moved: false, collapse, hit: hl };
+    const rec = recStart();
+    if (!collapse && !rec) toTop(node);
+    drag = { items: mkItems(), sx: w.x, sy: w.y, moved: false, collapse, hit: hl, rec };
     return;
   }
   if (!e.shiftKey) setSelection([]);
@@ -1038,6 +1041,7 @@ cv.addEventListener('pointermove', e => {
     return;
   }
   if (xf) {
+    if (xf.rec) { recXf(e, p); return; }
     const w = toWorld(p.x, p.y), single = xf.items.length === 1;
     if (xf.kind === 'rot') {
       let dth = Math.atan2(w.y - xf.cy, w.x - xf.cx) - xf.a0;
@@ -1055,7 +1059,9 @@ cv.addEventListener('pointermove', e => {
   else if (drag) {
     const w = toWorld(p.x, p.y), dx = w.x - drag.sx, dy = w.y - drag.sy;
     if (!drag.moved && Math.hypot(dx, dy) * view.s < 3) return;
-    drag.moved = true; for (const it of drag.items) it.l.box.position.set(it.x + dx, it.y + dy);
+    drag.moved = true;
+    if (drag.rec) { recDrag(dx, dy); return; }
+    for (const it of drag.items) it.l.box.position.set(it.x + dx, it.y + dy);
   } else if (marq) {
     marq.x1 = p.x; marq.y1 = p.y;
     pathG.clear().rect(Math.min(marq.x0, p.x), Math.min(marq.y0, p.y), Math.abs(p.x - marq.x0), Math.abs(p.y - marq.y0)).fill({ color: 0xf2b134, alpha: 0.12 }).stroke({ width: 1, color: 0xf2b134 });
@@ -1112,6 +1118,7 @@ addEventListener('keydown', e => {
   if (key === '0') { fitView(); return; }
   if (key === ']') { click('btn-up'); return; }
   if (key === '[') { click('btn-down'); return; }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selKF) { click('btn-kfdel'); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && selection.size) click('btn-del');
   if (e.key === 'Enter') samValidate();
   if (e.key === 'Escape') { stopPlay(); closeAccPop(); samClear(); path = null; marq = null; pathG.clear(); if (tool !== 'move') setTool(tool); }
@@ -1120,7 +1127,7 @@ addEventListener('keydown', e => {
 // ---- surcouche de sélection
 app.ticker.add(() => {
   selG.clear(); animG.clear();
-  if (playing) { if (!paused) animT += app.ticker.deltaMS / 1000; applyAnim(); if (!paused) { syncPanels(); return; } }
+  if (playing) { if (!paused) { animT += app.ticker.deltaMS / 1000; const D = tlDuration(); if (animT >= D) animT %= D; } applyAnim(); if (!paused) { syncPanels(); return; } }
   drawAnimPaths();
   if (selection.size > 1) for (const l of selection) { const q = frameCorners(l).flatMap(c => [c.x, c.y]); selG.poly(q).stroke({ width: 1, color: 0xffffff, alpha: 0.7 }); }
   const h = selHandles();
@@ -1235,6 +1242,7 @@ function syncPanels() {
   $('opts').classList.toggle('nosel', !selection.size);
   $('btn-save').classList.toggle('dirty', dirty && layers.length > 0);   // pastille : modifications non enregistrées
   syncAnimBar();
+  syncTimeline();
   for (const [id, out] of [['border', 'v-border'], ['rough', 'v-rough'], ['shadow', 'v-shadow'], ['tol', 'v-tol']]) {
     const r = $<HTMLInputElement>(id), v = +r.value, mn = +r.min, mx = +r.max;
     r.style.setProperty('--p', ((v - mn) / (mx - mn)) * 100 + '%'); $(out).textContent = String(v);
@@ -1474,8 +1482,70 @@ function setCrumple(l: Layer, b: number) {
   fx.spr.scale.set(fx.sz); fx.sh.scale.set(fx.sz); fx.spr.alpha = toBall; fx.sh.alpha = sa * toBall;
 }
 
+// ---- timeline : images clés par propriété (position, rotation, taille, chiffonnage, visibilité).
+// Les valeurs sont relatives à la pose de repos ; avant la première image clé on garde sa valeur, après la dernière aussi.
+type KEase = 'linear' | 'smooth' | 'hold';
+interface KF { t: number; v: number; w?: number; e?: KEase }   // w : seconde valeur (y de la position) ; e : interpolation vers l'image clé suivante
+interface TL { pos?: KF[]; rot?: KF[]; scale?: KF[]; crumple?: KF[]; vis?: KF[] }
+type PropId = 'pos' | 'rot' | 'scale' | 'crumple' | 'vis';
+const PROPS: { id: PropId; name: string; icon: string; dv: number; dw: number }[] = [
+  { id: 'pos', name: 'Position', icon: 'move', dv: 0, dw: 0 }, { id: 'rot', name: 'Rotation', icon: 'spin', dv: 0, dw: 0 },
+  { id: 'scale', name: 'Taille', icon: 'fit', dv: 1, dw: 0 }, { id: 'crumple', name: 'Chiffonnage', icon: 'ball', dv: 0, dw: 0 },
+  { id: 'vis', name: 'Visibilité', icon: 'eye', dv: 1, dw: 0 },
+];
+const defEase = (p: PropId): KEase => (p === 'vis' ? 'hold' : 'smooth');
+const tlOf = (n: Node): TL | undefined => (isGroup(n) ? (n.tl as TL | undefined) : (n as Layer).tl);
+function setTl(n: Node, tl: TL | undefined) { if (isGroup(n)) n.tl = tl; else (n as Layer).tl = tl; }
+
+function evalKF(k: KF[] | undefined, t: number, dv: number, dw = 0): { v: number; w: number } {
+  if (!k?.length) return { v: dv, w: dw };
+  const n = k.length;
+  if (t <= k[0].t) return { v: k[0].v, w: k[0].w ?? dw };
+  if (t >= k[n - 1].t) return { v: k[n - 1].v, w: k[n - 1].w ?? dw };
+  let i = 0; while (i < n - 2 && k[i + 1].t <= t) i++;
+  const a = k[i], b = k[i + 1], e = a.e ?? 'smooth';
+  let f = (t - a.t) / ((b.t - a.t) || 1);
+  if (e === 'hold') f = 0; else if (e === 'smooth') f = smooth(f);
+  const aw = a.w ?? dw, bw = b.w ?? dw;
+  return { v: a.v + (b.v - a.v) * f, w: aw + (bw - aw) * f };
+}
+function evalTL(tl: TL | undefined, t: number) {
+  const p = evalKF(tl?.pos, t, 0, 0);
+  return { x: p.v, y: p.w, rot: evalKF(tl?.rot, t, 0).v, scale: evalKF(tl?.scale, t, 1).v, crumple: evalKF(tl?.crumple, t, 0).v, vis: evalKF(tl?.vis, t, 1).v };
+}
+/** Pose (ou met à jour) l'image clé de `prop` à l'instant t. La première image clé posée après 0 s ajoute un départ à la valeur de repos. */
+function putKey(n: Node, prop: PropId, t: number, v: number, w?: number, e?: KEase) {
+  const tl: TL = { ...(tlOf(n) ?? {}) }, list = [...(tl[prop] ?? [])];
+  const i = list.findIndex(k => Math.abs(k.t - t) < 0.02);
+  if (i >= 0) list[i] = { ...list[i], v, ...(w !== undefined ? { w } : {}) };
+  else {
+    if (!list.length && t > 0.05) { const d = PROPS.find(q => q.id === prop)!; list.push({ t: 0, v: d.dv, ...(prop === 'pos' ? { w: 0 } : {}), e: defEase(prop) }); }
+    list.push({ t, v, ...(w !== undefined ? { w } : {}), e: e ?? defEase(prop) });
+  }
+  list.sort((a, b) => a.t - b.t); tl[prop] = list; setTl(n, tl);
+}
+function removeKey(n: Node, prop: PropId, t: number) {
+  const tl: TL = { ...(tlOf(n) ?? {}) }, list = (tl[prop] ?? []).filter(k => Math.abs(k.t - t) > 1e-6);
+  if (list.length) tl[prop] = list; else delete tl[prop];
+  setTl(n, Object.keys(tl).length ? tl : undefined);
+}
+function nodeKeyTimes(n: Node): number[] {
+  const tl = tlOf(n), out = new Set<number>();
+  if (tl) for (const p of PROPS) for (const k of tl[p.id] ?? []) out.add(k.t);
+  return [...out].sort((a, b) => a - b);
+}
+let tlDurManual: number | null = null;
+function lastKeyTime(): number {
+  let m = 0;
+  const f = (n: Node) => { for (const t of nodeKeyTimes(n)) m = Math.max(m, t); };
+  layers.forEach(f); const w = (g: Group) => { for (const c of g.children) if (isGroup(c)) { f(c); w(c); } }; w(root);
+  return m;
+}
+/** Durée de la timeline : celle fixée à la main, sinon la plus grande entre 5 s, un cycle de trajet et la dernière image clé. */
+const tlDuration = () => tlDurManual ?? Math.max(5, Math.ceil(Math.max(animCycleMax(), lastKeyTime()) * 2) / 2);
+
 // ---- lecture : on part de la pose de repos de chaque calque, on y ajoute les décalages de son chemin et de ceux de ses groupes
-const restPose = new Map<Layer, { x: number; y: number; r: number }>();
+const restPose = new Map<Layer, { x: number; y: number; r: number; sx: number; sy: number }>();
 const groupRest = new Map<Group, Pt>();
 let playing = false, paused = false, animT = 0;
 function groupRestCenter(g: Group): Pt {
@@ -1490,20 +1560,28 @@ function groupRestCenter(g: Group): Pt {
 function applyAnim() {
   for (const l of layers) {
     let r0 = restPose.get(l);
-    if (!r0) { r0 = { x: l.box.x, y: l.box.y, r: l.box.rotation }; restPose.set(l, r0); }
-    let x = r0.x, y = r0.y, r = r0.r, ball = 0;
-    const step = (a: Anim | undefined, c: Pt | null) => {
-      if (!a || a.pts.length < 2) return;
-      const s = evalAnim(a, animT), d = (a.follow ? s.ang - pathAt(a, 0).ang : 0) + (s.rot * Math.PI) / 180;
-      if (d && c) { const rx = x - c.x, ry = y - c.y, cs = Math.cos(d), sn = Math.sin(d); x = c.x + rx * cs - ry * sn; y = c.y + rx * sn + ry * cs; }
-      r += d; x += s.x; y += s.y; ball = Math.max(ball, s.ball);
+    if (!r0) { r0 = { x: l.box.x, y: l.box.y, r: l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y }; restPose.set(l, r0); }
+    let x = r0.x, y = r0.y, r = r0.r, ball = 0, sc = 1, vis = true;
+    const step = (n: Node, c: Pt | null) => {   // c : centre de rotation et d'échelle (centre du groupe), null pour l'élément lui-même
+      const a = animOf(n);
+      if (a && a.pts.length >= 2) {
+        const s = evalAnim(a, animT), d = (a.follow ? s.ang - pathAt(a, 0).ang : 0) + (s.rot * Math.PI) / 180;
+        if (d && c) { const rx = x - c.x, ry = y - c.y, cs = Math.cos(d), sn = Math.sin(d); x = c.x + rx * cs - ry * sn; y = c.y + rx * sn + ry * cs; }
+        r += d; x += s.x; y += s.y; ball = Math.max(ball, s.ball);
+      }
+      const tl = tlOf(n);
+      if (tl) {
+        const v = evalTL(tl, animT), d = (v.rot * Math.PI) / 180;
+        if (c && (d || v.scale !== 1)) { const rx = x - c.x, ry = y - c.y, cs = Math.cos(d), sn = Math.sin(d); x = c.x + (rx * cs - ry * sn) * v.scale; y = c.y + (rx * sn + ry * cs) * v.scale; }
+        r += d; sc *= v.scale; x += v.x; y += v.y; ball = Math.max(ball, v.crumple); if (v.vis < 0.5) vis = false;
+      }
     };
-    step(l.anim, null);
-    for (let g: Group | null = l.parent; g && g !== root; g = g.parent) step(g.anim as Anim | undefined, groupRestCenter(g));
-    l.box.position.set(x, y); l.box.rotation = r; setCrumple(l, ball);
+    step(l, null);
+    for (let g: Group | null = l.parent; g && g !== root; g = g.parent) step(g, groupRestCenter(g));
+    l.box.position.set(x, y); l.box.rotation = r; l.box.scale.set(r0.sx * sc, r0.sy * sc); l.box.visible = shown(l) && vis; setCrumple(l, ball);
   }
 }
-const anyAnim = () => layers.some(l => l.anim) || (() => { let f = false; const w = (g: Group) => { for (const c of g.children) if (isGroup(c)) { if (c.anim) f = true; w(c); } }; w(root); return f; })();
+const anyAnim = () => layers.some(l => l.anim || l.tl) || (() => { let f = false; const w = (g: Group) => { for (const c of g.children) if (isGroup(c)) { if (c.anim || c.tl) f = true; w(c); } }; w(root); return f; })();
 function playUI() {
   const b = $('btn-play');
   b.classList.toggle('on', playing && !paused);
@@ -1513,7 +1591,7 @@ function playUI() {
 }
 function startPlay() {
   restPose.clear(); groupRest.clear();
-  for (const l of layers) restPose.set(l, { x: l.box.x, y: l.box.y, r: l.box.rotation });
+  for (const l of layers) restPose.set(l, { x: l.box.x, y: l.box.y, r: l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y });
   for (const l of layers) { let uses = false; for (let n: Node | null = l; n && n !== root; n = n.parent) if (keysOf((animOf(n) ?? { pts: [], dur: 1, mode: 'loop', ease: 'linear', follow: false }) as Anim).some(kk => kk.ball)) uses = true; if (uses) ensureBall(l); }
   playing = true; paused = false; animT = 0; playUI();
   status('Lecture — Espace pour mettre en pause, Échap pour arrêter.');
@@ -1521,13 +1599,13 @@ function startPlay() {
 function pausePlay() { if (!playing) startPlay(); paused = true; playUI(); status('En pause : ◆ ajoute une image clé ; la poignée ronde fait pivoter.'); }
 function stopPlay() {
   if (!playing) return;
-  for (const [l, p] of restPose) { l.box.position.set(p.x, p.y); l.box.rotation = p.r; setCrumple(l, 0); }
-  restPose.clear(); groupRest.clear(); playing = false; paused = false; playUI(); status('Lecture arrêtée.');
+  for (const [l, p] of restPose) { l.box.position.set(p.x, p.y); l.box.rotation = p.r; l.box.scale.set(p.sx, p.sy); setCrumple(l, 0); }
+  restPose.clear(); groupRest.clear(); playing = false; paused = false; applyVis(); playUI(); status('Lecture arrêtée.');
 }
 $('btn-play').onclick = () => {
   if (playing && !paused) { pausePlay(); return; }
   if (playing) { paused = false; playUI(); status('Lecture.'); return; }
-  if (anyAnim()) startPlay(); else status("Aucune trajectoire : choisis l'outil trajectoire (P) et dessine un chemin.");
+  if (anyAnim()) startPlay(); else status("Rien à lire : dessine une trajectoire (P) ou pose des images clés dans la timeline.");
 };
 $('btn-stop').onclick = stopPlay;
 
@@ -1647,7 +1725,6 @@ $('btn-spinonly').onclick = () => {
 };
 bindNum('v-turns', v => editAnim(a => ({ ...a, turns: Math.max(-50, Math.min(50, Math.round(v * 100) / 100)) })));
 $('btn-adel').onclick = () => { const ns = animNodes(); if (!ns.length) return; stopPlay(); ns.forEach(n => setAnim(n, undefined)); commit(); };
-$<HTMLInputElement>('tl').oninput = e => { playheadTo((+(e.target as HTMLInputElement).value / 1000) * tlTotal()); };
 $('btn-key').onclick = () => {
   const an = animNodes()[0]; if (!an) { status("Sélectionne un élément qui a une trajectoire."); return; }
   const a = animOf(an)!;
@@ -1680,27 +1757,11 @@ bindNum('v-anim-dur', v => editDuration(Math.min(600, Math.max(0.2, v))));
 bindNum('v-key-hold', v => editKey(k => ({ ...k, hold: Math.min(60, Math.max(0.1, v)) })));
 bindNum('v-key-spin', v => editKey(k => ({ ...k, spin: Math.max(-7200, Math.min(7200, Math.round(v))) })));
 
-let marksSig = '';
 function syncAnimBar() {
   const an = animNodes()[0], a = an ? animOf(an) : undefined, ak = activeKey();
   $('animbar').classList.toggle('noanim', !a);
   $('animbar').classList.toggle('nokey', !ak);
   ($('btn-play') as HTMLButtonElement).disabled = !playing && !anyAnim();
-  const tot = a ? totalOf(a) : tlTotal(), tl = $<HTMLInputElement>('tl');
-  if (document.activeElement !== tl) tl.value = String(playing ? Math.round(((a ? curT(a) : animT % tot) / tot) * 1000) : 0);
-  tl.style.setProperty('--p', +tl.value / 10 + '%');
-  $('v-tl').textContent = `${(playing ? (a ? curT(a) : animT % tot) : 0).toFixed(1)} / ${tot.toFixed(1)} s`;
-  // repères des images clés sur la ligne de temps
-  const ks = a ? keysOf(a) : [], st = a ? keyStarts(a) : [], sig = a ? ks.map((k, i) => `${st[i].toFixed(2)}:${k.hold}:${i === ak?.i ? 1 : 0}`).join('|') + '/' + tot.toFixed(2) : '';
-  if (sig !== marksSig) {
-    marksSig = sig; const box = $('tl-keys'); box.innerHTML = '';
-    ks.forEach((k, i) => {
-      const m = document.createElement('button');
-      m.className = 'kmark' + (i === ak?.i ? ' on' : ''); m.style.left = ((st[i] + k.hold / 2) / tot) * 100 + '%'; m.style.width = Math.max(10, (k.hold / tot) * 100) + '%'; m.title = 'Image clé';
-      m.onclick = () => playheadTo(st[i] + k.hold);
-      box.appendChild(m);
-    });
-  }
   if (a) {
     const r = $<HTMLInputElement>('anim-dur');
     if (document.activeElement !== r) r.value = String(Math.round(a.dur * 10));
@@ -1719,6 +1780,204 @@ function syncAnimBar() {
     const folded = ballAfter(ak.a, ak.i), kb = $('btn-kball');
     kb.classList.toggle('on', folded); kb.dataset.tip = folded ? 'Déchiffonner (la feuille se redéplie)' : 'Se chiffonner en boule';
     kb.querySelector('use')!.setAttribute('href', folded ? '#i-unfold' : '#i-ball');
+  }
+}
+
+// ---- timeline : panneau (une ligne par élément, des sous-lignes par propriété, règle, tête de lecture, images clés)
+const NAMEW = 190;                                   // largeur de la colonne des noms
+let tlPps = 90, recording = false, tlSig = '';       // pixels par seconde ; enregistrement automatique ; signature du dernier rendu
+let selKF: { node: Node; prop: PropId; t: number } | null = null;
+const tlOpen = new Set<Node>(), tlSeen = new Set<Node>();
+const nodeName = (n: Node) => (isGroup(n) ? n.name : (n as Layer).name);
+const nodeKey = (n: Node) => (isGroup(n) ? 'g' : 'l') + n.id;
+const clampT = (t: number) => Math.max(0, Math.min(tlDuration(), t));
+type TRow = { kind: 'node' | 'prop'; node: Node; prop?: PropId; depth: number };
+
+function timelineRows(): TRow[] {
+  const sel = new Set(selectedNodes()), out: TRow[] = [];
+  for (const n of sel) if (!tlSeen.has(n)) { tlSeen.add(n); tlOpen.add(n); }   // un élément fraîchement sélectionné s'ouvre
+  const walk = (g: Group, depth: number) => {
+    for (let i = g.children.length - 1; i >= 0; i--) {
+      const n = g.children[i];
+      if (tlOf(n) || animOf(n) || sel.has(n)) {
+        out.push({ kind: 'node', node: n, depth });
+        if (tlOpen.has(n)) for (const p of PROPS) out.push({ kind: 'prop', node: n, prop: p.id, depth });
+      }
+      if (isGroup(n)) walk(n, depth + 1);
+    }
+  };
+  walk(root, 0);
+  return out;
+}
+function selectNode(n: Node, add = false) {
+  const ls = leavesOf(n) as Layer[];
+  if (add) { ls.forEach(x => selection.add(x)); setSelection([...selection], ls[ls.length - 1]); } else setSelection(ls, ls[ls.length - 1]);
+}
+function tlTimeAt(clientX: number) { const r = $('tl-stage').getBoundingClientRect(); return clampT((clientX - r.left - NAMEW) / tlPps); }
+function startScrub(e: PointerEvent) {
+  e.preventDefault(); playheadTo(tlTimeAt(e.clientX));
+  const mv = (ev: PointerEvent) => playheadTo(tlTimeAt(ev.clientX));
+  addEventListener('pointermove', mv); addEventListener('pointerup', () => removeEventListener('pointermove', mv), { once: true });
+}
+const curKF = (): KF | null => (selKF ? (tlOf(selKF.node)?.[selKF.prop] ?? []).find(k => Math.abs(k.t - selKF!.t) < 1e-6) ?? null : null);
+function moveKey(n: Node, prop: PropId, from: number, to: number) {
+  const tl: TL = { ...(tlOf(n) ?? {}) }, list = [...(tl[prop] ?? [])], i = list.findIndex(k => Math.abs(k.t - from) < 1e-6);
+  if (i < 0 || list.some((k, j) => j !== i && Math.abs(k.t - to) < 0.02)) return false;
+  list[i] = { ...list[i], t: to }; list.sort((a, b) => a.t - b.t); tl[prop] = list; setTl(n, tl);
+  return true;
+}
+function startKFDrag(e: PointerEvent, node: Node, prop: PropId, t0: number) {
+  e.stopPropagation(); e.preventDefault();
+  selKF = { node, prop, t: t0 }; tlSig = ''; playheadTo(t0);
+  const x0 = e.clientX; let moved = false;
+  const mv = (ev: PointerEvent) => {
+    if (!moved && Math.abs(ev.clientX - x0) < 3) return;
+    moved = true;
+    const nt = clampT(t0 + (ev.clientX - x0) / tlPps), to = ev.shiftKey ? nt : Math.round(nt * 20) / 20;   // pas de 0,05 s (Maj = libre)
+    if (selKF && moveKey(node, prop, selKF.t, to)) { selKF.t = to; animT = to; }
+  };
+  addEventListener('pointermove', mv);
+  addEventListener('pointerup', () => { removeEventListener('pointermove', mv); if (moved) commit(); }, { once: true });
+}
+function addKeyAt(n: Node, prop: PropId, t: number) {
+  playheadTo(t);
+  const v = evalTL(tlOf(n), t), d = PROPS.find(p => p.id === prop)!;
+  const val = prop === 'pos' ? v.x : prop === 'rot' ? v.rot : prop === 'scale' ? v.scale : prop === 'crumple' ? v.crumple : v.vis;
+  putKey(n, prop, t, val, prop === 'pos' ? v.y : undefined);
+  selKF = { node: n, prop, t: (tlOf(n)![prop] ?? []).reduce((best, k) => (Math.abs(k.t - t) < Math.abs(best - t) ? k.t : best), 1e9) }; void d;
+  commit();
+}
+
+function renderTimeline() {
+  const D = tlDuration(), W = Math.ceil(D * tlPps) + 80, stage = $('tl-stage');
+  stage.style.width = NAMEW + W + 'px'; stage.style.setProperty('--pps', String(tlPps));
+  const ruler = $('tl-ruler'); ruler.style.width = W + 'px'; ruler.innerHTML = '';
+  const steps = [0.1, 0.25, 0.5, 1, 2, 5, 10, 30], step = steps.find(s => s * tlPps >= 62) ?? 30;
+  for (let t = 0; t <= D + 1e-6; t += step) { const m = document.createElement('span'); m.className = 'rt'; m.style.left = t * tlPps + 'px'; m.textContent = Math.round(t * 100) / 100 + ' s'; ruler.appendChild(m); }
+  const rows = $('tl-rows'); rows.innerHTML = '';
+  const sel = new Set(selectedNodes());
+  for (const r of timelineRows()) {
+    const isNode = r.kind === 'node', row = document.createElement('div');
+    row.className = 'tr ' + r.kind + (isNode && sel.has(r.node) ? ' sel' : '');
+    const nm = document.createElement('div'); nm.className = 'tn';
+    if (isNode) {
+      nm.style.paddingLeft = 6 + r.depth * 14 + 'px';
+      nm.innerHTML = `<button class="chev${tlOpen.has(r.node) ? ' open' : ''}" tabindex="-1"><svg class="ic"><use href="#i-chev"/></svg></button>${isGroup(r.node) ? '<svg class="ic fold"><use href="#i-folder"/></svg>' : ''}<span class="nm"></span>`;
+      (nm.querySelector('.nm') as HTMLElement).textContent = nodeName(r.node);
+      (nm.querySelector('.chev') as HTMLElement).onclick = e => { e.stopPropagation(); if (tlOpen.has(r.node)) tlOpen.delete(r.node); else tlOpen.add(r.node); tlSig = ''; };
+      nm.onclick = e => selectNode(r.node, e.shiftKey);
+    } else {
+      const d = PROPS.find(p => p.id === r.prop)!;
+      nm.style.paddingLeft = 6 + r.depth * 14 + 24 + 'px';
+      nm.innerHTML = `<svg class="ic"><use href="#i-${d.icon}"/></svg><span class="nm"></span>`;
+      (nm.querySelector('.nm') as HTMLElement).textContent = d.name;
+    }
+    const tt = document.createElement('div'); tt.className = 'tt'; tt.style.width = W + 'px';
+    tt.addEventListener('pointerdown', startScrub);
+    const z = document.createElement('div'); z.className = 'tz'; z.style.left = D * tlPps + 'px'; tt.appendChild(z);   // au-delà de la durée
+    if (isNode) {
+      const a = animOf(r.node);
+      if (a && a.pts.length >= 2) {   // la trajectoire est un clip qui se répète sur toute la durée
+        const tot = totalOf(a), cyc = a.mode === 'loop' ? tot : tot * 2;
+        for (let s = 0, i = 0; s < D; s += cyc, i++) { const c = document.createElement('div'); c.className = 'clip' + (i ? ' rep' : ''); c.style.left = s * tlPps + 'px'; c.style.width = Math.min(cyc, D - s) * tlPps + 'px'; tt.appendChild(c); }
+        const ks = keysOf(a);
+        keyStarts(a).forEach((st, i) => {
+          const pk = document.createElement('button'); pk.className = 'pk'; pk.title = 'Pause sur la trajectoire';
+          pk.style.left = st * tlPps + 'px'; pk.style.width = Math.max(7, ks[i].hold * tlPps) + 'px';
+          pk.onpointerdown = e => { e.stopPropagation(); selectNode(r.node); playheadTo(st + ks[i].hold); };
+          tt.appendChild(pk);
+        });
+      }
+      for (const t of nodeKeyTimes(r.node)) { const d = document.createElement('div'); d.className = 'kf sum'; d.style.left = t * tlPps + 'px'; tt.appendChild(d); }
+    } else {
+      const list = tlOf(r.node)?.[r.prop!] ?? [];
+      for (let i = 0; i < list.length - 1; i++) { const s = document.createElement('div'); s.className = 'seg'; s.style.left = list[i].t * tlPps + 'px'; s.style.width = (list[i + 1].t - list[i].t) * tlPps + 'px'; tt.appendChild(s); }
+      list.forEach(k => {
+        const b = document.createElement('button');
+        b.className = 'kf' + (selKF && selKF.node === r.node && selKF.prop === r.prop && Math.abs(selKF.t - k.t) < 1e-6 ? ' sel' : '');
+        b.style.left = k.t * tlPps + 'px'; b.title = `${PROPS.find(p => p.id === r.prop)!.name} à ${k.t.toFixed(2)} s`;
+        b.onpointerdown = e => startKFDrag(e, r.node, r.prop!, k.t);
+        tt.appendChild(b);
+      });
+      tt.ondblclick = e => addKeyAt(r.node, r.prop!, Math.round(tlTimeAt(e.clientX) * 20) / 20);   // double-clic sur une ligne : image clé à la valeur actuelle
+    }
+    row.append(nm, tt); rows.appendChild(row);
+  }
+  $('tl-empty').style.display = rows.children.length ? 'none' : 'flex';
+}
+
+function editSelKF(f: (k: KF) => KF) {
+  if (!selKF) return;
+  const { node, prop, t } = selKF, tl: TL = { ...(tlOf(node) ?? {}) }, list = [...(tl[prop] ?? [])], i = list.findIndex(k => Math.abs(k.t - t) < 1e-6);
+  if (i < 0) return;
+  const nk = f(list[i]);
+  if (nk.t !== t && list.some((k, j) => j !== i && Math.abs(k.t - nk.t) < 0.02)) return;
+  list[i] = nk; list.sort((a, b) => a.t - b.t); tl[prop] = list; setTl(node, tl); selKF = { node, prop, t: nk.t }; commitSoon();
+}
+const fromUnit = (prop: PropId, v: number) => (prop === 'crumple' ? Math.min(1, Math.max(0, v / 100)) : prop === 'vis' ? (v > 0.5 ? 1 : 0) : prop === 'scale' ? Math.max(0.05, v) : v);
+bindNum('kf-t', v => editSelKF(k => ({ ...k, t: clampT(v) })));
+bindNum('kf-v', v => editSelKF(k => ({ ...k, v: fromUnit(selKF!.prop, v) })));
+bindNum('kf-w', v => editSelKF(k => ({ ...k, w: v })));
+$('btn-kfease').onclick = () => editSelKF(k => ({ ...k, e: ({ linear: 'smooth', smooth: 'hold', hold: 'linear' } as Record<KEase, KEase>)[k.e ?? 'smooth'] }));
+$('btn-kfdel').onclick = () => { if (selKF) { removeKey(selKF.node, selKF.prop, selKF.t); selKF = null; commit(); } };
+bindNum('tl-now', v => playheadTo(clampT(v)));
+bindNum('tl-dur', v => { tlDurManual = v > 0 ? Math.min(600, Math.max(0.5, v)) : null; commit(); });   // 0 = automatique
+$<HTMLInputElement>('tl-zoom').oninput = e => { tlPps = +(e.target as HTMLInputElement).value; tlSig = ''; };
+$('tl-body').addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); tlPps = Math.min(400, Math.max(20, tlPps * (e.deltaY > 0 ? 0.9 : 1.1))); $<HTMLInputElement>('tl-zoom').value = String(Math.round(tlPps)); tlSig = ''; }, { passive: false });
+$('tl-ruler-row').addEventListener('pointerdown', e => { if ((e.target as HTMLElement).closest('.tn')) return; startScrub(e); });
+$('btn-tlfold').onclick = () => $('timeline').classList.toggle('folded');
+$('btn-rec').onclick = () => {
+  recording = !recording; $('btn-rec').classList.toggle('on', recording);
+  if (recording) { if (playing && !paused) pausePlay(); else if (!playing) playheadTo(animT); status("Enregistrement : place la tête de lecture, puis déplace, tourne ou agrandis l'élément : les images clés se créent seules."); }
+  else status('Enregistrement arrêté.');
+};
+$('btn-tlkey').onclick = () => {
+  const ns = selectedNodes(); if (!ns.length) { status("Sélectionne d'abord un élément ou un groupe."); return; }
+  if (!playing) playheadTo(animT); else if (!paused) pausePlay();
+  for (const n of ns) { const v = evalTL(tlOf(n), animT); putKey(n, 'pos', animT, v.x, v.y); putKey(n, 'rot', animT, v.rot); putKey(n, 'scale', animT, v.scale); tlOpen.add(n); }
+  commit(); status('Image clé de pose ajoutée (position, rotation, taille) à cet instant.');
+};
+
+// enregistrement automatique : en pause, déplacer / tourner / agrandir l'élément sélectionné crée ou met à jour ses images clés à l'instant courant
+interface RecBase { nodes: Node[]; base: { x: number; y: number; rot: number; scale: number }[] }
+function recStart(): RecBase | null {
+  if (!(recording && playing && paused)) return null;
+  const nodes = selectedNodes(); if (!nodes.length) return null;
+  return { nodes, base: nodes.map(n => { const v = evalTL(tlOf(n), animT); return { x: v.x, y: v.y, rot: v.rot, scale: v.scale }; }) };
+}
+function recDrag(dx: number, dy: number) { const rc = drag!.rec!; rc.nodes.forEach((n, i) => putKey(n, 'pos', animT, rc.base[i].x + dx, rc.base[i].y + dy)); }
+function recXf(e: PointerEvent, p: Pt) {
+  const x = xf!, rc = x.rec!, n = rc.nodes[0], b = rc.base[0], w = toWorld(p.x, p.y);
+  if (x.kind === 'rot') {
+    let dth = Math.atan2(w.y - x.cy, w.x - x.cx) - x.a0; dth = Math.atan2(Math.sin(dth), Math.cos(dth));
+    const b0 = (b.rot * Math.PI) / 180, step = Math.PI / 12;
+    if (e.shiftKey) dth = Math.round((b0 + dth) / step) * step - b0;
+    putKey(n, 'rot', animT, b.rot + (dth * 180) / Math.PI);
+  } else putKey(n, 'scale', animT, b.scale * Math.max(0.02, Math.hypot(w.x - x.cx, w.y - x.cy) / x.d0));
+}
+
+function syncTimeline() {
+  const D = tlDuration(), sel = new Set(selectedNodes());
+  const sig = [tlPps, D.toFixed(2), selKF ? selKF.prop + selKF.t : '', timelineRows().map(r => {
+    const a = animOf(r.node);
+    return `${r.kind}${nodeKey(r.node)}${r.prop ?? ''}${tlOpen.has(r.node) ? 1 : 0}${sel.has(r.node) ? 1 : 0}${nodeName(r.node)}${JSON.stringify(tlOf(r.node) ?? '')}${r.kind === 'node' && a ? `${a.dur}${a.mode}${a.pts.length}${JSON.stringify(a.keys ?? '')}` : ''}`;
+  }).join('|')].join('#');
+  if (sig !== tlSig) { tlSig = sig; renderTimeline(); }
+  const T = playing ? animT : 0, head = $('tl-head'), body = $('tl-body');
+  head.style.left = NAMEW + T * tlPps + 'px';
+  if (playing && !paused) { const x = NAMEW + T * tlPps; if (x < body.scrollLeft + NAMEW + 8 || x > body.scrollLeft + body.clientWidth - 24) body.scrollLeft = Math.max(0, x - NAMEW - 40); }
+  setNum('tl-now', T.toFixed(2) + ' s'); setNum('tl-dur', D.toFixed(1) + ' s' + (tlDurManual === null ? ' (auto)' : ''));
+  $('timeline').classList.toggle('rec', recording && playing && paused);
+  const k = curKF(), ed = $('kf-ed');
+  if (selKF && !k) selKF = null;
+  ed.classList.toggle('on', !!k);
+  if (k && selKF) {
+    const p = selKF.prop;
+    ed.dataset.prop = p; setNum('kf-t', k.t.toFixed(2) + ' s');
+    setNum('kf-v', p === 'pos' ? Math.round(k.v) + ' px' : p === 'rot' ? Math.round(k.v * 10) / 10 + '°' : p === 'scale' ? k.v.toFixed(2) + ' ×' : p === 'crumple' ? Math.round(k.v * 100) + ' %' : k.v > 0.5 ? 'visible' : 'caché');
+    if (p === 'pos') setNum('kf-w', Math.round(k.w ?? 0) + ' px');
+    $('btn-kfease').querySelector('use')!.setAttribute('href', '#i-ease-' + (k.e ?? 'smooth'));
+    $('btn-kfease').dataset.tip = ({ linear: 'Vitesse constante vers l’image clé suivante', smooth: 'Départ et arrivée en douceur', hold: 'Palier : la valeur reste jusqu’à l’image clé suivante' } as Record<KEase, string>)[k.e ?? 'smooth'];
   }
 }
 

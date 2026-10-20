@@ -46,6 +46,24 @@ Outil « Détourer au clic » : clic sur l'objet → aperçu ; Maj+clic ajoute u
 - Export vidéo de l'animation (icône pellicule) : durée (par défaut un cycle complet), 24/30/60 images par seconde, taille 100 % ou 50 % ; chaque image est rendue à l'instant exact i/fps (rendu identique sur toute machine) puis encodée en MP4 H.264, ou en WebM si le moteur n'a pas H.264 ; barre de progression et annulation
 - Export PNG de la feuille, export des calques (PNG + `manifest.json` compatible Godot/animation)
 
+## Timeline
+
+Panneau en bas (repliable) : règle graduée, tête de lecture que l'on glisse, une ligne par élément ou groupe qui se déplie en cinq pistes : **Position, Rotation, Taille, Chiffonnage, Visibilité**. Les trajets dessinés apparaissent comme des clips, avec leurs pauses.
+
+- **Enregistrement automatique** (point rouge) : place la tête de lecture, puis déplace, tourne (poignée ronde) ou agrandis (coins) l'élément sélectionné : l'image clé se crée seule à cet instant. La première image clé posée après 0 s ajoute un départ à la valeur de repos.
+- Image clé de pose (losange) : fixe position, rotation et taille à cet instant. Double-clic sur une piste : image clé à la valeur actuelle.
+- Glisser un losange pour le décaler (pas de 0,05 s, Maj = libre) ; l'éditeur permet de saisir l'instant et la valeur au clavier, de choisir l'interpolation (constante, douce, palier) ou de supprimer (Suppr).
+- Durée de la timeline : automatique ou saisie ; zoom au curseur ou Ctrl+molette. Tout est enregistré dans le projet, lu à l'export vidéo et dans le manifeste.
+
+## Timeline
+
+Panneau en bas (repliable) : règle graduée, tête de lecture que l'on glisse, une ligne par élément ou groupe qui se déplie en cinq pistes : **Position, Rotation, Taille, Chiffonnage, Visibilité**. Les trajets dessinés apparaissent comme des clips, avec leurs pauses.
+
+- **Enregistrement automatique** (point rouge) : place la tête de lecture, puis déplace, tourne (poignée ronde) ou agrandis (coins) l'élément sélectionné : l'image clé se crée seule à cet instant. La première image clé posée après 0 s ajoute un départ à la valeur de repos.
+- Image clé de pose (losange) : fixe position, rotation et taille à cet instant. Double-clic sur une piste : image clé à la valeur actuelle.
+- Glisser un losange pour le décaler (pas de 0,05 s, Maj = libre) ; l'éditeur permet de saisir l'instant et la valeur au clavier, de choisir l'interpolation (constante, douce, palier) ou de supprimer (Suppr).
+- Durée de la timeline : automatique ou saisie ; zoom au curseur ou Ctrl+molette. Tout est enregistré dans le projet, lu à l'export vidéo et dans le manifeste.
+
 ## Animation
 
 Outil trajectoire (P) : sélectionne un élément (ou un groupe dans le panneau), dessine le chemin à partir de lui ; le chemin est enregistré avec l'élément ou le groupe (les chemins s'additionnent le long de la hiérarchie). ▶ / Espace = lecture et pause, ■ / Échap = arrêt. Réglages : durée, boucle ou aller-retour, vitesse constante ou douce, orienter dans le sens du trajet, rotation continue (nombre de tours sur lui-même par cycle, négatif = sens inverse) ; le bouton flèche circulaire à gauche de la barre du bas fait tourner un élément ou un groupe sur place, sans trajectoire.
