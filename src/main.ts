@@ -50,7 +50,15 @@ function toast(title: string, detail = '', kind: 'ok' | 'warn' | 'err' = 'ok', m
 const app = new Application();
 await app.init({ resizeTo: $('stage'), backgroundAlpha: 0, antialias: true, resolution: window.devicePixelRatio, autoDensity: true });
 $('stage').appendChild(app.canvas);
-new ResizeObserver(() => { app.resize(); if (!layers.length || viewFitted) fitView(); }).observe($('stage'));   // la feuille suit la taille de la zone de travail (timeline étirée, fenêtre redimensionnée)
+let lastW = 0, lastH = 0;
+new ResizeObserver(() => {
+  app.resize();
+  const { width: w, height: h } = app.screen;
+  // vue zoomée : le point qui était au centre de la zone de travail y reste (on ne perd pas de vue ce qu'on regardait)
+  if (lastW && !(!layers.length || viewFitted)) { view.x += (w - lastW) / 2; view.y += (h - lastH) / 2; applyView(); }
+  lastW = w; lastH = h;
+  if (!layers.length || viewFitted) fitView();
+}).observe($('stage'));   // la feuille suit la taille de la zone de travail (timeline étirée, fenêtre redimensionnée)
 
 const world = new Container();
 const paper = new Graphics();
