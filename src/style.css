@@ -169,7 +169,6 @@ body.drop #stage::after { content: ""; position: absolute; inset: 12px; border: 
 /* barre d'animation */
 #animbar { grid-area: anim; position: relative; z-index: 6; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--panel); border-top: 1px solid var(--line); }
 #animbar .grp { border: 0; margin: 0; padding: 0; }
-#animbar.noanim .grp { opacity: .3; pointer-events: none; }
 .ib.play { width: 34px; height: 34px; border-radius: 17px; background: var(--raise); }
 .ib.play:hover { background: #3f454e; }
 .ib.play.on { background: var(--accent); color: var(--on-accent); }
