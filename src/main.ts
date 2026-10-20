@@ -3,6 +3,7 @@ import { PAD, makeCanvas, bake, trim, jitter } from './sticker';
 import { cutoutAI, cutoutFlat, modelAvailable } from './cutout';
 import { makeSeparate, makeGrouped, makeOne, FONTS, PALETTES, type LetterOpts, type LetterSpec } from './letters';
 import { ACC_KINDS, ACC_COLORS, ACC_DEFAULTS, type AccCat, type AccKind, type AccParams } from './accessories';
+import { encodeVideo, videoSupported } from './video';
 import { samAvailable, segment, forget, type SamPoint } from './sam';
 import { type Group, type Leaf, type Node, type TNode, isGroup, leavesOf, detach, attach, prune, topNode, lca, childOf, contains, serialize, buildTree } from './groups';
 
@@ -694,6 +695,75 @@ function setFormat(w: number, h: number) {
 }
 for (const [id, w, h] of FORMATS) $(id).onclick = () => setFormat(w, h);
 syncFmt();
+
+// ---- export vidéo : la feuille est rendue image par image à l'instant i/fps puis encodée (MP4, ou WebM si le moteur n'a pas H.264)
+const vid = { fps: 30, scale: 1 };
+const vidPop = $('vidpop');
+/** Durée d'un cycle complet de l'animation la plus longue (un aller-retour compte double). */
+function animCycleMax(): number {
+  let m = 0;
+  const f = (a?: Anim) => { if (a) m = Math.max(m, a.mode === 'loop' ? totalOf(a) : totalOf(a) * 2); };
+  layers.forEach(l => f(l.anim));
+  const w = (g: Group) => { for (const c of g.children) if (isGroup(c)) { f(c.anim as Anim | undefined); w(c); } };
+  w(root);
+  return m;
+}
+const vidDuration = () => Math.max(0.2, parseFloat($<HTMLInputElement>('vid-dur').value.replace(',', '.')) || 0);
+function syncVid() {
+  vidPop.querySelectorAll<HTMLElement>('[data-fps]').forEach(b => b.classList.toggle('on', +b.dataset.fps! === vid.fps));
+  vidPop.querySelectorAll<HTMLElement>('[data-scale]').forEach(b => b.classList.toggle('on', +b.dataset.scale! === vid.scale));
+  const W = Math.round(PW * vid.scale / 2) * 2, H = Math.round(PH * vid.scale / 2) * 2;
+  $('vid-info').textContent = `${W}×${H} · ${Math.max(2, Math.round(vidDuration() * vid.fps))} images`;
+}
+function closeVidPop() { vidPop.classList.remove('open'); $('btn-video').classList.remove('on'); }
+$('btn-video').onclick = () => {
+  if (vidPop.classList.contains('open')) { closeVidPop(); return; }
+  if (!anyAnim()) { toast('Aucune animation à exporter', "Dessine d'abord une trajectoire avec l'outil trajectoire (P).", 'warn'); return; }
+  if (!videoSupported()) { toast('Export vidéo indisponible', "Cette fenêtre ne sait pas encoder de vidéo.", 'err'); return; }
+  $<HTMLInputElement>('vid-dur').value = animCycleMax().toFixed(1).replace('.0', '') + ' s';
+  vidPop.classList.add('open'); $('btn-video').classList.add('on'); syncVid();
+};
+vidPop.addEventListener('click', e => {
+  const b = (e.target as HTMLElement).closest<HTMLElement>('[data-fps],[data-scale]'); if (!b) return;
+  if (b.dataset.fps) vid.fps = +b.dataset.fps; else vid.scale = +b.dataset.scale!;
+  syncVid();
+});
+$('vid-dur').oninput = syncVid;
+$('vid-dur').onfocus = () => $<HTMLInputElement>('vid-dur').select();
+addEventListener('pointerdown', e => { if (vidPop.classList.contains('open') && !vidPop.contains(e.target as globalThis.Node) && !$('btn-video').contains(e.target as globalThis.Node)) closeVidPop(); });
+let renderCancel = false;
+$('render-cancel').onclick = () => { renderCancel = true; };
+async function exportVideo() {
+  const fps = vid.fps, frames = Math.max(2, Math.round(vidDuration() * fps));
+  const W = Math.round(PW * vid.scale / 2) * 2, H = Math.round(PH * vid.scale / 2) * 2;   // H.264 veut des dimensions paires
+  closeVidPop(); stopPlay(); closeAccPop(); closeTextPop();
+  startPlay(); paused = true;                                                           // pose de repos mémorisée, boules préparées ; on pilote nous-mêmes le temps
+  const saveView = { ...view }; world.position.set(0, 0); world.scale.set(1); ui.visible = false;
+  const out = makeCanvas(W, H), octx = out.getContext('2d')!;
+  renderCancel = false; $('render-ov').classList.add('on'); $('render-txt').textContent = 'Rendu de la vidéo…'; ($('render-bar') as HTMLElement).style.width = '0%';
+  const t0 = performance.now();
+  try {
+    const res = await encodeVideo({ width: W, height: H, fps, frames }, i => {
+      animT = i / fps; applyAnim();
+      const src = app.renderer.extract.canvas({ target: world, frame: new Rectangle(0, 0, PW, PH), resolution: vid.scale }) as HTMLCanvasElement;
+      octx.drawImage(src, 0, 0, W, H);
+      return out;
+    }, done => { ($('render-bar') as HTMLElement).style.width = (done / frames) * 100 + '%'; $('render-txt').textContent = `Rendu de la vidéo… ${Math.round((done / frames) * 100)} %`; }, () => renderCancel);
+    if (!res) { toast('Export annulé', '', 'warn'); return; }
+    const name = `${projectName}.${res.ext}`, secs = Math.round((performance.now() - t0) / 100) / 10;
+    const detail = `${W}×${H}, ${fps} i/s, ${(frames / fps).toFixed(1)} s, ${fmtSize(res.blob.size)} — rendu en ${secs} s`;
+    if (tauri) {
+      const path = await nativeSave(res.blob, name, res.ext === 'mp4' ? 'Vidéo MP4' : 'Vidéo WebM', res.ext);
+      if (path) toast('Vidéo exportée', `${baseName(path)} — ${detail}\n${path}`, 'ok'); else toast('Export annulé', 'Vidéo rendue mais non enregistrée.', 'warn');
+    } else { download(res.blob, name); toast('Vidéo prête', `${name} — ${detail}`, res.ext === 'mp4' ? 'ok' : 'warn'); }
+    status(`Vidéo ${res.ext.toUpperCase()} (${res.codec}) : ${detail}`);
+  } catch (e) { console.error(e); toast('Export vidéo impossible', String(e instanceof Error ? e.message : e), 'err'); }
+  finally {
+    view.x = saveView.x; view.y = saveView.y; view.s = saveView.s; applyView(); ui.visible = true;
+    $('render-ov').classList.remove('on'); stopPlay();
+  }
+}
+$('vid-go').onclick = exportVideo;
 
 // ---- export
 function extractPaper(): HTMLCanvasElement {

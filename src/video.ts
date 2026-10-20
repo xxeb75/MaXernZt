@@ -1,0 +1,66 @@
+// Encodage vidéo image par image (WebCodecs) : MP4 H.264 si le moteur le permet, sinon WebM VP9.
+import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4Target } from 'mp4-muxer';
+import { Muxer as WebmMuxer, ArrayBufferTarget as WebmTarget } from 'webm-muxer';
+
+export interface VideoSpec { width: number; height: number; fps: number; frames: number }
+export interface VideoResult { blob: Blob; ext: 'mp4' | 'webm'; codec: string }
+
+const CANDIDATES: { codec: string; kind: 'mp4' | 'webm' }[] = [
+  { codec: 'avc1.64002A', kind: 'mp4' }, { codec: 'avc1.4D002A', kind: 'mp4' }, { codec: 'avc1.42002A', kind: 'mp4' },
+  { codec: 'vp09.00.40.08', kind: 'webm' }, { codec: 'vp8', kind: 'webm' },
+];
+
+export const videoSupported = () => typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
+
+/** Premier codec réellement disponible pour cette taille et cette cadence. */
+async function pickCodec(spec: VideoSpec, bitrate: number) {
+  for (const c of CANDIDATES) {
+    try {
+      const r = await VideoEncoder.isConfigSupported({ codec: c.codec, width: spec.width, height: spec.height, bitrate, framerate: spec.fps });
+      if (r.supported) return c;
+    } catch { /* codec inconnu : suivant */ }
+  }
+  return null;
+}
+
+/**
+ * `getFrame(i)` doit renvoyer le canvas de l'image n° i (taille width×height). L'encodage est déterministe :
+ * chaque image est dessinée à l'instant i/fps, quelle que soit la vitesse de la machine.
+ */
+export async function encodeVideo(
+  spec: VideoSpec,
+  getFrame: (i: number) => HTMLCanvasElement | Promise<HTMLCanvasElement>,
+  onProgress: (done: number) => void,
+  cancelled: () => boolean,
+): Promise<VideoResult | null> {
+  if (!videoSupported()) throw new Error("cette fenêtre ne sait pas encoder de vidéo (WebCodecs absent)");
+  const bitrate = Math.round(spec.width * spec.height * spec.fps * 0.15);
+  const pick = await pickCodec(spec, bitrate);
+  if (!pick) throw new Error('aucun codec vidéo disponible pour cette taille');
+  const mp4 = pick.kind === 'mp4';
+  const mux = mp4
+    ? new Mp4Muxer({ target: new Mp4Target(), video: { codec: 'avc', width: spec.width, height: spec.height }, fastStart: 'in-memory' })
+    : new WebmMuxer({ target: new WebmTarget(), video: { codec: pick.codec === 'vp8' ? 'V_VP8' : 'V_VP9', width: spec.width, height: spec.height, frameRate: spec.fps } });
+  let failure: Error | null = null;
+  const enc = new VideoEncoder({
+    output: (chunk, meta) => (mux as { addVideoChunk(c: EncodedVideoChunk, m?: EncodedVideoChunkMetadata): void }).addVideoChunk(chunk, meta),
+    error: e => { failure = e instanceof Error ? e : new Error(String(e)); },
+  });
+  enc.configure({ codec: pick.codec, width: spec.width, height: spec.height, bitrate, framerate: spec.fps, ...(mp4 ? { avc: { format: 'avc' as const } } : {}) });
+  const keyEvery = Math.max(1, Math.round(spec.fps * 2));
+  for (let i = 0; i < spec.frames; i++) {
+    if (cancelled()) { enc.close(); return null; }
+    if (failure) throw failure;
+    const canvas = await getFrame(i);
+    const vf = new VideoFrame(canvas, { timestamp: Math.round((i * 1e6) / spec.fps), duration: Math.round(1e6 / spec.fps) });
+    enc.encode(vf, { keyFrame: i % keyEvery === 0 });
+    vf.close();
+    while (enc.encodeQueueSize > 6) await new Promise(r => setTimeout(r, 4));   // ne pas empiler les images en mémoire
+    if (i % 4 === 0) { onProgress(i + 1); await new Promise(r => setTimeout(r, 0)); }
+  }
+  await enc.flush(); enc.close();
+  if (failure) throw failure;
+  mux.finalize();
+  const buf = (mux.target as Mp4Target | WebmTarget).buffer;
+  return { blob: new Blob([buf], { type: mp4 ? 'video/mp4' : 'video/webm' }), ext: mp4 ? 'mp4' : 'webm', codec: pick.codec };
+}

@@ -10,8 +10,10 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "mp4-muxer": "^5.2.2",
     "onnxruntime-web": "^1.30.0",
-    "pixi.js": "^8.22.0"
+    "pixi.js": "^8.22.0",
+    "webm-muxer": "^5.1.4"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.3",

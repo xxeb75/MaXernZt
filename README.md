@@ -43,6 +43,7 @@ Outil « Détourer au clic » : clic sur l'objet → aperçu ; Maj+clic ajoute u
 - Projet : enregistrer (Ctrl+S) / ouvrir (Ctrl+O, ou glisser un fichier `.maxernzt`) / nouveau ; pastille jaune sur le bouton quand il y a des modifications non enregistrées, notification « Projet enregistré » (nom, calques, taille), notification jaune si le fichier a dû être téléchargé et rouge en cas d'échec, avertissement à la fermeture
 - Annuler / rétablir (Ctrl+Z, Ctrl+Y ; 60 étapes) pour toutes les actions
 - Format de la feuille : 16/9 (1920×1080), carré (1080×1080) ou 9/16 (1080×1920, par défaut), au choix dans la barre d'options ; les éléments restent centrés, le format est annulable et enregistré dans le projet
+- Export vidéo de l'animation (icône pellicule) : durée (par défaut un cycle complet), 24/30/60 images par seconde, taille 100 % ou 50 % ; chaque image est rendue à l'instant exact i/fps (rendu identique sur toute machine) puis encodée en MP4 H.264, ou en WebM si le moteur n'a pas H.264 ; barre de progression et annulation
 - Export PNG de la feuille, export des calques (PNG + `manifest.json` compatible Godot/animation)
 
 ## Animation
