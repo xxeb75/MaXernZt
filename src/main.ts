@@ -25,7 +25,7 @@ interface Layer extends Leaf {
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = (s: string) => ($('status').textContent = s);
 /** Appli Windows (Tauri) : boîtes de dialogue et écriture de fichiers natives, fiables, sans passer par le navigateur. */
-type TauriApi = { dialog: { save(o: unknown): Promise<string | null>; open(o: unknown): Promise<string | string[] | null> }; fs: { writeFile(p: string, d: Uint8Array): Promise<void>; mkdir(p: string, o?: unknown): Promise<void> } };
+type TauriApi = { dialog: { save(o: unknown): Promise<string | null>; open(o: unknown): Promise<string | string[] | null> }; fs: { readFile(p: string): Promise<Uint8Array>; writeFile(p: string, d: Uint8Array): Promise<void>; mkdir(p: string, o?: unknown): Promise<void> } };
 const tauri = (window as unknown as { __TAURI__?: TauriApi }).__TAURI__?.dialog ? (window as unknown as { __TAURI__: TauriApi }).__TAURI__ : null;
 async function nativeSave(blob: Blob, name: string, label: string, ext: string): Promise<string | null> {
   const path = await tauri!.dialog.save({ defaultPath: name, filters: [{ name: label, extensions: [ext] }] });
@@ -761,12 +761,15 @@ ${out}`, 'ok');
 
 // ---- projet : sauvegarde / chargement (.maxernzt = JSON, images en PNG base64, partagées si identiques)
 let projectName = 'collage', dirty = false;
+let projectPath: string | null = null;   // appli Windows : fichier du projet (Ctrl+S réécrit celui-ci sans rien demander)
+let projectHandle: any = null;             // navigateur : poignée du fichier choisi, réutilisée de la même façon
 /** L'enregistrement par sélecteur de fichier est peu fiable dans l'appli Claude (fichier créé mais vide) : on y télécharge directement. */
 function pickerBroken() {
   if (/Electron|Claude\//.test(navigator.userAgent)) return true;
   try { return localStorage.getItem('maxernzt.nopicker') === '1'; } catch { return false; }
 }
-async function saveProject() {
+/** Enregistrer (asNew = false) : réécrit le fichier connu sans fenêtre ; Enregistrer sous (asNew = true) : demande toujours où. */
+async function saveProject(asNew = false) {
   stopPlay();
   const ids = new Map<HTMLCanvasElement, string>(), images: Record<string, string> = {};
   const out = layers.map(l => {
@@ -778,11 +781,12 @@ async function saveProject() {
   const fileName = projectName + '.maxernzt';
   if (tauri) {
     try {
-      const path = await nativeSave(blob, fileName, 'Projet MaXernZt', 'maxernzt');
-      if (!path) return;
-      projectName = baseName(path).replace(/\.maxernzt$/i, ''); dirty = false;
+      let path = asNew ? null : projectPath;
+      if (path) { try { await tauri.fs.writeFile(path, new Uint8Array(await blob.arrayBuffer())); } catch (err) { console.error('réécriture impossible', err); path = null; } }  // fichier déplacé ou inaccessible : on redemande
+      if (!path) { path = await nativeSave(blob, fileName, 'Projet MaXernZt', 'maxernzt'); if (!path) return; }
+      projectPath = path; projectName = baseName(path).replace(/\.maxernzt$/i, ''); dirty = false;
       const info = `${baseName(path)} — ${layers.length} calques, ${fmtSize(blob.size)}`;
-      $('btn-save').dataset.tip = `Enregistrer (Ctrl+S) — dernier : ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+      $('btn-save').dataset.tip = `Enregistrer (Ctrl+S) — ${path}`;
       status(`Projet enregistré : ${path}`); toast('Projet enregistré', `${info}\n${path}`, 'ok');
     } catch (e) { console.error(e); status("Erreur d'enregistrement : " + String(e)); toast('Enregistrement impossible', String(e), 'err'); }
     return;
@@ -791,14 +795,14 @@ async function saveProject() {
     const w = window as any;
     let ok = false;
     if (w.showSaveFilePicker && !pickerBroken()) {
-      const h = await w.showSaveFilePicker({ suggestedName: fileName, types: [{ description: 'Projet MaXernZt', accept: { 'application/json': ['.maxernzt'] } }] });
+      const h = (!asNew && projectHandle) || await w.showSaveFilePicker({ suggestedName: fileName, types: [{ description: 'Projet MaXernZt', accept: { 'application/json': ['.maxernzt'] } }] });
       try {
         const ws = await h.createWritable(); await ws.write(blob); await ws.close();
         const written = (await h.getFile()).size;       // le fichier choisi existe déjà : on vérifie qu'il est bien rempli
         if (written !== blob.size) throw new Error(`${written} octets écrits sur ${blob.size}`);
-        projectName = String(h.name).replace(/\.maxernzt$/i, ''); ok = true;
+        projectName = String(h.name).replace(/\.maxernzt$/i, ''); projectHandle = h; ok = true;
       } catch (err) {
-        console.error('enregistrement direct impossible', err);
+        console.error('enregistrement direct impossible', err); projectHandle = null;
         try { localStorage.setItem('maxernzt.nopicker', '1'); } catch { /* ignoré */ }   // la prochaine fois : directement le téléchargement, une seule fenêtre
         status("Écriture directe impossible (" + (err as Error).message + ") : téléchargement du fichier à la place.");
       }
@@ -818,7 +822,7 @@ async function saveProject() {
 const decode = (url: string) => new Promise<HTMLCanvasElement>((res, rej) => {
   const im = new Image(); im.onload = () => { const c = makeCanvas(im.width, im.height); c.getContext('2d')!.drawImage(im, 0, 0); res(c); }; im.onerror = () => rej(new Error('image illisible')); im.src = url;
 });
-async function loadProject(f: File) {
+async function loadProject(f: File, path?: string) {
   stopPlay();
   try {
     const txt = await f.text();
@@ -830,17 +834,26 @@ async function loadProject(f: File) {
     const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, anim: l.anim, acc: l.acc, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
     restore({ paper: Array.isArray(d.paper) && d.paper.length === 2 ? [d.paper[0], d.paper[1]] : undefined, layers: ls, bg: d.bg ?? bgColor, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
-    projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); commit(); dirty = false;
+    projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); projectPath = path ?? null; projectHandle = null; commit(); dirty = false;
+    if (path) $('btn-save').dataset.tip = `Enregistrer (Ctrl+S) — ${path}`;
     status(`Projet « ${projectName} » ouvert (${ls.length} calques).`); toast('Projet ouvert', `${projectName} — ${ls.length} calques`, 'ok');
   } catch (e) { status('Ouverture impossible : ' + (e as Error).message); toast('Ouverture impossible', (e as Error).message, 'err'); }
 }
-$('btn-save').onclick = saveProject;
-$('btn-open').onclick = () => $<HTMLInputElement>('file-proj').click();
+$('btn-save').onclick = () => saveProject(false);
+$('btn-saveas').onclick = () => saveProject(true);
+$('btn-open').onclick = async () => {
+  if (!tauri) { $<HTMLInputElement>('file-proj').click(); return; }
+  try {                                    // appli Windows : on connaît le chemin, donc Ctrl+S réécrira ce fichier
+    const path = await tauri.dialog.open({ multiple: false, filters: [{ name: 'Projet MaXernZt', extensions: ['maxernzt', 'json'] }] }) as string | null;
+    if (!path) return;
+    await loadProject(new File([new Uint8Array(await tauri.fs.readFile(path))], baseName(path)), path);
+  } catch (e) { toast('Ouverture impossible', String(e), 'err'); }
+};
 $<HTMLInputElement>('file-proj').onchange = e => { const i = e.target as HTMLInputElement; if (i.files![0]) loadProject(i.files![0]); i.value = ''; };
 $('btn-new').onclick = () => {
   stopPlay();
   if (layers.length && dirty && !confirm('Vider la feuille ? (tu pourras annuler avec Ctrl+Z)')) return;
-  restore({ layers: [], bg: bgColor, tree: [], sel: [] }); projectName = 'collage'; commit(); status('Nouvelle feuille.');
+  restore({ layers: [], bg: bgColor, tree: [], sel: [] }); projectName = 'collage'; projectPath = null; projectHandle = null; $('btn-save').dataset.tip = 'Enregistrer (Ctrl+S)'; commit(); status('Nouvelle feuille.');
 };
 addEventListener('beforeunload', e => { if (dirty && layers.length) e.preventDefault(); });
 
@@ -1005,9 +1018,9 @@ addEventListener('keydown', e => {
   const t = e.target as HTMLInputElement, typing = t.tagName === 'INPUT' && t.type === 'text';
   if (e.ctrlKey || e.metaKey) {
     const k = e.key.toLowerCase();
-    if (k === 's') { e.preventDefault(); saveProject(); return; }
+    if (k === 's') { e.preventDefault(); saveProject(e.shiftKey); return; }
     if (k === 'd' && selection.size) { e.preventDefault(); $('btn-dup').click(); return; }
-    if (k === 'o') { e.preventDefault(); $<HTMLInputElement>('file-proj').click(); return; }
+    if (k === 'o') { e.preventDefault(); $('btn-open').click(); return; }
     if (typing) return;
     if (k === 'g') { e.preventDefault(); (e.shiftKey ? ungroupSelection : groupSelection)(); return; }
     if (k === 'a') { e.preventDefault(); setSelection([...layers]); return; }

@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Enregistrement et export de fichiers choisis par l'utilisateur",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:default", "fs:allow-write-file", "fs:allow-mkdir"]
+  "permissions": ["core:default", "dialog:default", "fs:allow-read-file", "fs:allow-write-file", "fs:allow-mkdir"]
 }
