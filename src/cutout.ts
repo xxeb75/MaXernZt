@@ -1,6 +1,6 @@
 // Détourage : IA (U²-Net via onnxruntime-web) ou fond uni (remplissage par diffusion).
 import * as ort from 'onnxruntime-web/wasm';
-import { makeCanvas } from './sticker';
+import { makeCanvas, assetOk } from './sticker';
 import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url';
 
 ort.env.wasm.wasmPaths = { wasm: ortWasm };
@@ -9,10 +9,7 @@ ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 2);
 const MODEL_URL = '/models/u2netp.onnx';
 let sessionPromise: Promise<ort.InferenceSession> | null = null;
 
-export async function modelAvailable(): Promise<boolean> {
-  try { const r = await fetch(MODEL_URL, { method: 'HEAD' }); return r.ok && !(r.headers.get('content-type') || '').includes('text/html'); }
-  catch { return false; }
-}
+export const modelAvailable = () => assetOk(MODEL_URL);
 
 function getSession() {
   sessionPromise ??= ort.InferenceSession.create(MODEL_URL, { executionProviders: ['wasm'] });

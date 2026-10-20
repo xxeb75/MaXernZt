@@ -25,6 +25,16 @@ const vnoise = (x: number, y: number, s: number) => {
  * Le contour est un champ flou de la silhouette coupé à un seuil qui varie avec du bruit :
  * épaisseur inégale, bord déchiqueté, fibres. `rough` (0-100) règle l'irrégularité, `seed` la forme.
  */
+/** Le fichier existe-t-il vraiment (et n'est-ce pas la page d'accueil renvoyée à sa place) ? */
+export async function assetOk(url: string): Promise<boolean> {
+  try {
+    const r = await fetch(url);
+    const ok = r.ok && !(r.headers.get('content-type') || '').includes('text/html');
+    r.body?.cancel();
+    return ok;
+  } catch { return false; }
+}
+
 export function bake(base: HTMLCanvasElement, border: number, rough = 60, seed = 1): HTMLCanvasElement {
   const W = base.width + PAD * 2, H = base.height + PAD * 2;
   const out = makeCanvas(W, H);

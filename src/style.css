@@ -234,3 +234,5 @@ input.num:focus { outline: none; border-color: var(--accent); background: #0f111
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } .toast.out { transition: none; } }
 /* pastille « non enregistré » sur le bouton d'enregistrement */
 #btn-save.dirty::before { content: ""; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--chrome); }
+
+.toast span { white-space: pre-line; }

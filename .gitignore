@@ -1,3 +1,7 @@
 node_modules
 dist
 public/models/*.onnx
+src-tauri/target
+src-tauri/gen
+release
+*.exe

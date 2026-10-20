@@ -9,6 +9,16 @@ npm install
 npm run dev      # http://localhost:5173
 ```
 
+## Application Windows (Tauri)
+
+```bash
+npm install
+npm run tauri -- build --no-bundle    # produit src-tauri/target/release/maxernzt.exe (modèles d'IA embarqués)
+npm run tauri -- dev                  # fenêtre de développement
+```
+
+Prérequis : Rust (toolchain MSVC), Visual Studio Build Tools, WebView2. Dans l'application, l'enregistrement et les exports utilisent les boîtes de dialogue natives de Windows (plus de fichier vide).
+
 ## Détourage IA (optionnel)
 
 Place un modèle ONNX U²-Net dans `public/models/u2netp.onnx` (≈ 4,6 Mo, licence Apache 2.0, par ex. la version distribuée

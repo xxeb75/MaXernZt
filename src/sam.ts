@@ -1,6 +1,6 @@
 // Détourage au clic : MobileSAM (encodeur + décodeur ONNX) via onnxruntime-web.
 import * as ort from 'onnxruntime-web/wasm';
-import { makeCanvas } from './sticker';
+import { makeCanvas, assetOk } from './sticker';
 
 const ENC = '/models/mobile_sam_image_encoder.onnx';
 const DEC = '/models/sam_mask_decoder_single.onnx';
@@ -9,12 +9,7 @@ export type SamPoint = { x: number; y: number; label: 0 | 1 };
 let sessions: Promise<[ort.InferenceSession, ort.InferenceSession]> | null = null;
 const cache = new WeakMap<HTMLCanvasElement, Promise<ort.Tensor>>();
 
-export async function samAvailable(): Promise<boolean> {
-  try {
-    const r = await Promise.all([ENC, DEC].map(u => fetch(u, { method: 'HEAD' })));
-    return r.every(x => x.ok && !(x.headers.get('content-type') || '').includes('text/html'));
-  } catch { return false; }
-}
+export async function samAvailable(): Promise<boolean> { return (await Promise.all([ENC, DEC].map(assetOk))).every(Boolean); }
 
 export { ort };
 export function load() {

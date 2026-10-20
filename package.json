@@ -6,13 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri": "tauri"
   },
   "dependencies": {
     "onnxruntime-web": "^1.30.0",
     "pixi.js": "^8.22.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.4"
   }

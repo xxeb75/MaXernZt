@@ -24,6 +24,16 @@ interface Layer extends Leaf {
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = (s: string) => ($('status').textContent = s);
+/** Appli Windows (Tauri) : boîtes de dialogue et écriture de fichiers natives, fiables, sans passer par le navigateur. */
+type TauriApi = { dialog: { save(o: unknown): Promise<string | null>; open(o: unknown): Promise<string | string[] | null> }; fs: { writeFile(p: string, d: Uint8Array): Promise<void>; mkdir(p: string, o?: unknown): Promise<void> } };
+const tauri = (window as unknown as { __TAURI__?: TauriApi }).__TAURI__?.dialog ? (window as unknown as { __TAURI__: TauriApi }).__TAURI__ : null;
+async function nativeSave(blob: Blob, name: string, label: string, ext: string): Promise<string | null> {
+  const path = await tauri!.dialog.save({ defaultPath: name, filters: [{ name: label, extensions: [ext] }] });
+  if (!path) return null;                                                   // annulé
+  await tauri!.fs.writeFile(path, new Uint8Array(await blob.arrayBuffer()));
+  return path;
+}
+const baseName = (p: string) => p.split(/[\\/]/).pop() ?? p;
 const fmtSize = (b: number) => (b < 1e6 ? Math.max(1, Math.round(b / 1024)) + ' Ko' : (b / 1e6).toFixed(1) + ' Mo');
 /** Notification visible, qui s'efface seule : ok (vert), warn (jaune) ou err (rouge, plus longue). */
 function toast(title: string, detail = '', kind: 'ok' | 'warn' | 'err' = 'ok', ms = kind === 'err' ? 9000 : 4200) {
@@ -699,7 +709,17 @@ function download(blob: Blob | null, name: string) {
   document.body.appendChild(a); a.click();
   setTimeout(() => { a.remove(); URL.revokeObjectURL(a.href); }, 120000); // un gros fichier ne doit pas perdre son URL en cours de téléchargement
 }
-$('btn-export').onclick = () => { stopPlay(); extractPaper().toBlob(b => download(b, 'collage.png')); };
+$('btn-export').onclick = () => {
+  stopPlay();
+  extractPaper().toBlob(async b => {
+    if (!b) return;
+    if (!tauri) { download(b, 'collage.png'); toast('Export lancé', 'collage.png', 'warn'); return; }
+    try {
+      const path = await nativeSave(b, projectName + '.png', 'Image PNG', 'png');
+      if (path) toast('Image exportée', `${baseName(path)} — ${PW}×${PH}, ${fmtSize(b.size)}\n${path}`, 'ok');
+    } catch (e) { toast('Export impossible', String(e), 'err'); }
+  });
+};
 $('btn-export-layers').onclick = async () => {
   stopPlay();
   const name = (l: Layer, z: number) => `${String(z).padStart(2, '0')}_${l.name.replace(/\W+/g, '_')}.png`;
@@ -715,6 +735,22 @@ $('btn-export-layers').onclick = async () => {
       scale: [+l.box.scale.x.toFixed(3), +l.box.scale.y.toFixed(3)], z,
     })),
   };
+  if (tauri) {   // appli Windows : on choisit un dossier et on y écrit tout directement
+    try {
+      const dir = await tauri.dialog.open({ directory: true, title: 'Dossier où exporter les calques' }) as string | null;
+      if (!dir) return;
+      const sep = dir.includes('\\') ? '\\' : '/', out = dir + sep + projectName + '_calques';
+      await tauri.fs.mkdir(out + sep + 'layers', { recursive: true });
+      for (let z = 0; z < layers.length; z++) {
+        const b = await new Promise<Blob | null>(r => layers[z].baked.toBlob(r));
+        await tauri.fs.writeFile(out + sep + 'layers' + sep + name(layers[z], z), new Uint8Array(await b!.arrayBuffer()));
+      }
+      await tauri.fs.writeFile(out + sep + 'manifest.json', new TextEncoder().encode(JSON.stringify(manifest, null, 2)));
+      status('Calques exportés : ' + out); toast('Calques exportés', `${layers.length} PNG + manifest.json
+${out}`, 'ok');
+    } catch (e) { toast('Export impossible', String(e), 'err'); }
+    return;
+  }
   for (let z = 0; z < layers.length; z++) {
     await new Promise<void>(r => layers[z].baked.toBlob(b => { download(b, name(layers[z], z)); r(); }));
     await new Promise(r => setTimeout(r, 150));
@@ -740,6 +776,17 @@ async function saveProject() {
   });
   const blob = new Blob([JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, tree: serialize(root), layers: out, images })], { type: 'application/json' });
   const fileName = projectName + '.maxernzt';
+  if (tauri) {
+    try {
+      const path = await nativeSave(blob, fileName, 'Projet MaXernZt', 'maxernzt');
+      if (!path) return;
+      projectName = baseName(path).replace(/\.maxernzt$/i, ''); dirty = false;
+      const info = `${baseName(path)} — ${layers.length} calques, ${fmtSize(blob.size)}`;
+      $('btn-save').dataset.tip = `Enregistrer (Ctrl+S) — dernier : ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+      status(`Projet enregistré : ${path}`); toast('Projet enregistré', `${info}\n${path}`, 'ok');
+    } catch (e) { console.error(e); status("Erreur d'enregistrement : " + String(e)); toast('Enregistrement impossible', String(e), 'err'); }
+    return;
+  }
   try {
     const w = window as any;
     let ok = false;
