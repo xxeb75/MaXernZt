@@ -5,6 +5,7 @@ import { makeSeparate, makeGrouped, makeOne, FONTS, PALETTES, type LetterOpts, t
 import { ACC_KINDS, ACC_COLORS, ACC_DEFAULTS, type AccCat, type AccKind, type AccParams } from './accessories';
 import { encodeVideo, videoSupported } from './video';
 import { samAvailable, segment, forget, type SamPoint } from './sam';
+import { type LayerFx, FX0, FX_PRESETS, fxNeutral, applyLayerFx } from './filters';
 import { type Group, type Leaf, type Node, type TNode, isGroup, leavesOf, detach, attach, prune, topNode, lca, childOf, contains, serialize, buildTree } from './groups';
 
 let PW = 1080, PH = 1920; // taille de la feuille : 9/16 par défaut (voir les formats dans la barre d'options)
@@ -18,7 +19,7 @@ interface BallFx { spr: Sprite; sh: Sprite; fold: Sprite; frames: Texture[]; k: 
 /** Accessoire généré (scotch, peinture, punaise…) : type et réglages, pour pouvoir le modifier par double-clic. */
 interface AccSpec { kind: string; p: AccParams }
 interface Layer extends Leaf {
-  tl?: TL; acc?: AccSpec; anim?: Anim; ball?: BallFx; name: string; visible: boolean; locked?: boolean; base: HTMLCanvasElement; baked: HTMLCanvasElement;
+  tl?: TL; acc?: AccSpec; anim?: Anim; ball?: BallFx; name: string; visible: boolean; locked?: boolean; fx?: LayerFx; fxBase?: HTMLCanvasElement; base: HTMLCanvasElement; baked: HTMLCanvasElement;
   border: number; shadow: number; rough: number; letter?: LetterSpec;
   box: Container; sprite: Sprite; shade: Sprite;
 }
@@ -121,7 +122,8 @@ const texOf = (c: HTMLCanvasElement) => Texture.from(c);
 
 function refresh(l: Layer) {
   const old = l.sprite.texture;
-  l.baked = bake(l.base, l.border, l.rough, l.id * 7919 + 13);
+  l.fxBase = fxNeutral(l.fx) ? undefined : applyLayerFx(l.base, l.fx!);
+  l.baked = bake(l.fxBase ?? l.base, l.border, l.rough, l.id * 7919 + 13);
   l.sprite.texture = texOf(l.baked);
   l.shade.texture = l.sprite.texture;
   if (old !== Texture.EMPTY) old.destroy(true);
@@ -155,6 +157,7 @@ function setSelection(ls: Layer[], primary?: Layer) {
   selection.clear(); ls.forEach(x => selection.add(x));
   selected = primary && selection.has(primary) ? primary : ls[ls.length - 1] ?? null;
   const l = selected;
+  if (document.getElementById('flpop')!.classList.contains('open')) { if (l) syncFlPop(); else closeFlPop(); }
   if (l) { $<HTMLInputElement>('border').value = String(l.border); $<HTMLInputElement>('shadow').value = String(l.shadow); $<HTMLInputElement>('rough').value = String(l.rough); }
 }
 const select = (l: Layer | null) => setSelection(l ? [l] : [], l ?? undefined);
@@ -182,14 +185,14 @@ function hit(l: Layer, p: Pt): boolean {
 }
 
 // ---- historique (annuler / rétablir) : instantanés légers, les canvas de base sont immuables
-interface LState { id: number; name: string; visible: boolean; locked?: boolean; anim?: Anim; tl?: TL; acc?: AccSpec; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
+interface LState { id: number; name: string; visible: boolean; locked?: boolean; fx?: LayerFx; anim?: Anim; tl?: TL; acc?: AccSpec; base: HTMLCanvasElement; border: number; shadow: number; rough: number; letter?: LetterSpec; x: number; y: number; rot: number; sx: number; sy: number }
 interface Snap { layers: LState[]; bg: string; tree: TNode[]; sel: number[]; paper?: [number, number]; dur?: number | null }
 const snap = (): Snap => ({
-  layers: layers.map(l => ({ id: l.id, name: l.name, visible: l.visible, locked: l.locked, anim: l.anim, tl: l.tl, acc: l.acc, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: restPose.get(l)?.x ?? l.box.x, y: restPose.get(l)?.y ?? l.box.y, rot: restPose.get(l)?.r ?? l.box.rotation, sx: restPose.get(l)?.sx ?? l.box.scale.x, sy: restPose.get(l)?.sy ?? l.box.scale.y })),
+  layers: layers.map(l => ({ id: l.id, name: l.name, visible: l.visible, locked: l.locked, fx: l.fx, anim: l.anim, tl: l.tl, acc: l.acc, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: restPose.get(l)?.x ?? l.box.x, y: restPose.get(l)?.y ?? l.box.y, rot: restPose.get(l)?.r ?? l.box.rotation, sx: restPose.get(l)?.sx ?? l.box.scale.x, sy: restPose.get(l)?.sy ?? l.box.scale.y })),
   paper: [PW, PH], dur: tlDurManual, bg: bgColor, tree: serialize(root), sel: [...selection].filter(l => l !== selected).concat(selected ? [selected] : []).map(l => l.id),
 });
 const sameSnap = (a: Snap, b: Snap) => a.bg === b.bg && a.paper?.join() === b.paper?.join() && a.dur === b.dur && a.layers.length === b.layers.length && JSON.stringify(a.tree) === JSON.stringify(b.tree) &&
-  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.visible === v.visible && u.locked === v.locked && u.anim === v.anim && u.tl === v.tl && u.acc === v.acc && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
+  a.layers.every((u, i) => { const v = b.layers[i]; return u.id === v.id && u.name === v.name && u.visible === v.visible && u.locked === v.locked && u.fx === v.fx && u.anim === v.anim && u.tl === v.tl && u.acc === v.acc && u.base === v.base && u.border === v.border && u.shadow === v.shadow && u.rough === v.rough && u.letter === v.letter && u.x === v.x && u.y === v.y && u.rot === v.rot && u.sx === v.sx && u.sy === v.sy; });
 const hist: Snap[] = []; let hi = -1, soon = 0;
 function updHistUI() { ($('btn-undo') as HTMLButtonElement).disabled = hi <= 0; ($('btn-redo') as HTMLButtonElement).disabled = hi >= hist.length - 1; }
 function commit() {
@@ -218,7 +221,8 @@ function restore(s: Snap) {
       l.box.position.set(st.x, st.y); l.box.rotation = st.rot; l.box.scale.set(st.sx, st.sy);
       if (dirty) refresh(l);
     }
-    l.letter = st.letter; l.visible = st.visible !== false; l.locked = st.locked; l.anim = st.anim; l.tl = st.tl; l.acc = st.acc;
+    l.letter = st.letter; l.visible = st.visible !== false; l.locked = st.locked;
+    if (l.fx !== st.fx) { l.fx = st.fx; refresh(l); } l.anim = st.anim; l.tl = st.tl; l.acc = st.acc;
     ordered.push(l);
   }
   root.children = [];
@@ -454,7 +458,7 @@ function cloneNode(n: Node, parent: Group, dx: number, dy: number, out: Layer[])
   }
   const l = n as Layer;
   const nl = addLayer(l.base, l.name, { pos: { x: l.box.x + dx, y: l.box.y + dy }, rot: l.box.rotation, scale: { x: l.box.scale.x, y: l.box.scale.y } }, { border: l.border, shadow: l.shadow, rough: l.rough });
-  nl.letter = l.letter; nl.visible = l.visible; nl.locked = l.locked; nl.anim = l.anim; nl.tl = l.tl; nl.acc = l.acc; detach(nl); attach(nl, parent); out.push(nl);
+  nl.letter = l.letter; nl.visible = l.visible; nl.locked = l.locked; if (l.fx) { nl.fx = l.fx; refresh(nl); } nl.anim = l.anim; nl.tl = l.tl; nl.acc = l.acc; detach(nl); attach(nl, parent); out.push(nl);
   return nl;
 }
 /** Duplique des éléments ou des groupes (la copie, décalée, se place juste au-dessus de l'original et devient la sélection). */
@@ -522,6 +526,40 @@ const eachSel = (f: (l: Layer) => void) => { selection.forEach(f); commitSoon();
 $<HTMLInputElement>('border').oninput = e => { const v = +(e.target as HTMLInputElement).value; eachSel(l => { l.border = v; refresh(l); }); };
 $<HTMLInputElement>('rough').oninput = e => { const v = +(e.target as HTMLInputElement).value; eachSel(l => { l.rough = v; refresh(l); }); };
 $<HTMLInputElement>('shadow').oninput = e => { const v = +(e.target as HTMLInputElement).value; eachSel(l => { l.shadow = v; refresh(l); }); };
+
+// ---- effets de couleur de l'élément (panneau palette de la barre d'options)
+const flPop = $('flpop');
+const FL_KEYS = [['fl-br', 'br', ''], ['fl-co', 'co', ''], ['fl-sa', 'sa', ''], ['fl-hue', 'hue', '°'], ['fl-blur', 'blur', ' px'], ['fl-tinta', 'tintA', ' %']] as const;
+function syncFlPop() {
+  const f = selected?.fx ?? FX0;
+  for (const [id, key, unit] of FL_KEYS) {
+    const r = $<HTMLInputElement>(id); r.value = String(f[key]);
+    r.style.setProperty('--p', ((f[key] - +r.min) / (+r.max - +r.min)) * 100 + '%'); $('v-' + id).textContent = f[key] + unit;
+  }
+  $<HTMLInputElement>('fl-tint').value = f.tint;
+}
+function setFx(f: Partial<LayerFx> | null) {
+  eachSel(l => { const n = f ? { ...(l.fx ?? FX0), ...f } : FX0; l.fx = fxNeutral(n) ? undefined : n; refresh(l); });
+  syncFlPop();
+}
+for (const [id, key] of FL_KEYS) $<HTMLInputElement>(id).oninput = e => setFx({ [key]: +(e.target as HTMLInputElement).value });
+$<HTMLInputElement>('fl-tint').oninput = e => setFx({ tint: (e.target as HTMLInputElement).value, ...((selected?.fx?.tintA ?? 0) === 0 ? { tintA: 40 } : {}) });
+for (const p of FX_PRESETS) {
+  const b = document.createElement('button'); b.className = 'flp'; b.style.background = p.css; b.dataset.tip = p.name; b.dataset.pos = 'top';
+  b.onclick = () => { setFx({ ...FX0, ...p.fx }); commit(); };
+  $('fl-presets').appendChild(b);
+}
+$('fl-reset').onclick = () => { setFx(null); commit(); };
+function closeFlPop() { flPop.classList.remove('open'); $('btn-filter').classList.remove('on'); }
+$('btn-filter').onclick = e => {
+  e.stopPropagation();
+  if (flPop.classList.contains('open')) { closeFlPop(); return; }
+  if (!selection.size) { status('Sélectionne un élément pour lui appliquer des effets de couleur.'); return; }
+  const r = $('btn-filter').getBoundingClientRect();
+  flPop.style.left = Math.max(8, Math.min(r.left - 90, innerWidth - 276)) + 'px'; flPop.style.top = r.bottom + 8 + 'px';
+  syncFlPop(); flPop.classList.add('open'); $('btn-filter').classList.add('on');
+};
+addEventListener('pointerdown', e => { if (flPop.classList.contains('open') && !flPop.contains(e.target as HTMLElement) && !(e.target as HTMLElement).closest('#btn-filter')) { closeFlPop(); commit(); } });
 $<HTMLInputElement>('bg').oninput = e => { bgColor = (e.target as HTMLInputElement).value; drawPaper(); commitSoon(); };
 
 const textPop = $('textpop');
@@ -872,7 +910,7 @@ async function saveProject(asNew = false) {
   const out = layers.map(l => {
     let id = ids.get(l.base);
     if (!id) { id = 'img' + ids.size; ids.set(l.base, id); images[id] = l.base.toDataURL('image/png'); }
-    return { id: l.id, name: l.name, visible: l.visible, locked: l.locked || undefined, anim: l.anim, tl: l.tl, acc: l.acc, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
+    return { id: l.id, name: l.name, visible: l.visible, locked: l.locked || undefined, fx: l.fx, anim: l.anim, tl: l.tl, acc: l.acc, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
   });
   const blob = new Blob([JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, tree: serialize(root), duration: tlDurManual, layers: out, images })], { type: 'application/json' });
   const fileName = projectName + '.maxernzt';
@@ -928,7 +966,7 @@ async function loadProject(f: File, path?: string) {
     if (d.format !== 'maxernzt' || !Array.isArray(d.layers)) throw new Error('fichier non reconnu');
     const imgs = new Map<string, HTMLCanvasElement>();
     for (const [id, url] of Object.entries<string>(d.images)) imgs.set(id, await decode(url));
-    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, locked: !!l.locked, anim: l.anim, tl: l.tl, acc: l.acc, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
+    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, locked: !!l.locked, fx: l.fx, anim: l.anim, tl: l.tl, acc: l.acc, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
     restore({ dur: typeof d.duration === 'number' ? d.duration : null, paper: Array.isArray(d.paper) && d.paper.length === 2 ? [d.paper[0], d.paper[1]] : undefined, layers: ls, bg: d.bg ?? bgColor, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); projectPath = path ?? null; projectHandle = null; commit(); dirty = false;
@@ -1527,7 +1565,7 @@ function makeFoldFrames(src: HTMLCanvasElement, D: number, seed: number, F = 18)
 function ensureBall(l: Layer): BallFx {
   if (l.ball) return l.ball;
   const D = Math.max(48, 0.5 * Math.sqrt(opaqueArea(l.base))), S = Math.round(Math.min(D, 480)), cx = l.baked.width / 2, cy = l.baked.height / 2, sd = l.id * 31 + 7;
-  const tex = Texture.from(bake(makeBall(l.base, S, sd), l.border, l.rough, sd + 2)), spr = new Sprite(tex), sh = new Sprite(tex);
+  const tex = Texture.from(bake(makeBall(l.fxBase ?? l.base, S, sd), l.border, l.rough, sd + 2)), spr = new Sprite(tex), sh = new Sprite(tex);
   const { frames, sf } = makeFoldFrames(l.baked, D, sd + 3), ftex = frames.map(f => Texture.from(f)), fold = new Sprite(ftex[ftex.length - 1]);
   const a = l.shadow / 100;
   for (const q of [spr, sh, fold]) q.anchor.set(0.5);

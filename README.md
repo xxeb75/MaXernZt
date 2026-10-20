@@ -62,6 +62,10 @@ Panneau en bas, que l'on étire vers le haut en tirant sa poignée (double-clic 
 - **Calques verrouillés** : cadenas dans le panneau des calques (éléments et groupes) ou Ctrl+L sur la sélection. Un élément verrouillé ne se sélectionne plus et ne bouge plus sur la feuille (les clics le traversent), mais il reste animé à la lecture ; l'état est enregistré dans le projet.
 - **Effets prêts à l'emploi** (icône étincelles de la timeline) : apparition / disparition en fondu, surgit, s'évanouit, arrive en tournant, chute et rebonds, rebondit, battement, tremble, balancier, clignote. L'effet pose des images clés à partir de la tête de lecture, sur la durée choisie, pour la sélection ; elles restent modifiables une à une. La piste Visibilité gère maintenant une opacité continue (fondus).
 
+## Effets de couleur
+
+Icône palette dans la barre d'options (pour la sélection) : réglages rapides en un clic (noir et blanc, sépia, vieilli, photocopie, pop saturé, froid, négatif), puis luminosité, contraste, saturation, rotation de teinte, flou et voile coloré (couleur + intensité), avec retour à zéro. Les effets s'appliquent à l'image avant le contour : le bord blanc « papier » reste blanc ; ils sont annulables, enregistrés dans le projet, conservés par la duplication, et présents dans les exports PNG et vidéo.
+
 ## Animation
 
 Outil trajectoire (P) : sélectionne un élément (ou un groupe dans le panneau), dessine le chemin à partir de lui ; le chemin est enregistré avec l'élément ou le groupe (les chemins s'additionnent le long de la hiérarchie). ▶ / Espace = lecture et pause, ■ / Échap = arrêt. Réglages : durée, boucle ou aller-retour, vitesse constante ou douce, orienter dans le sens du trajet, rotation continue (nombre de tours sur lui-même par cycle, négatif = sens inverse) ; le bouton flèche circulaire à gauche de la barre du bas fait tourner un élément ou un groupe sur place, sans trajectoire.
