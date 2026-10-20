@@ -195,7 +195,8 @@ input.num:hover { border-color: var(--line); color: var(--text); }
 input.num:focus { outline: none; border-color: var(--accent); background: #0f1113; color: var(--text); }
 
 /* accessoires */
-#accpop { position: absolute; left: 58px; bottom: 8px; width: 330px; max-height: calc(100vh - 150px); display: none; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; background: #0f1113; box-shadow: 0 0 0 1px var(--line), 0 10px 30px rgba(0,0,0,.55); z-index: 8; overflow-y: auto; }
+#accpop { position: absolute; left: 58px; bottom: 8px; width: 330px; max-height: calc(100% - 16px); display: none; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; background: #0f1113; box-shadow: 0 0 0 1px var(--line), 0 10px 30px rgba(0,0,0,.55); z-index: 8; overflow-x: hidden; overflow-y: auto; }
+#accpop > * { flex: none; }   /* les blocs gardent leur taille : le panneau défile au lieu de les écraser les uns sur les autres */
 #accpop.open { display: flex; }
 #accpop.editing { box-shadow: 0 0 0 2px var(--accent), 0 10px 30px rgba(0,0,0,.55); }
 #accpop.editing #acc-cats { opacity: .3; pointer-events: none; }
@@ -285,7 +286,7 @@ input.num:focus { outline: none; border-color: var(--accent); background: #0f111
 .kf { position: absolute; top: 50%; width: 12px; height: 12px; padding: 0; margin: -6px 0 0 -6px; transform: rotate(45deg); background: var(--accent); border: 1.5px solid #1d1f23; border-radius: 2px; cursor: ew-resize; z-index: 2; }
 .kf:hover { background: #ffd47a; } .kf.sel { background: #fff; box-shadow: 0 0 0 2px var(--accent); }
 .kf.sum { width: 8px; height: 8px; margin: -4px 0 0 -4px; background: rgba(242,177,52,.6); pointer-events: none; }
-.seg { position: absolute; top: 50%; height: 2px; margin-top: -1px; background: rgba(242,177,52,.4); }
+.kseg { position: absolute; top: 50%; height: 2px; margin-top: -1px; background: rgba(242,177,52,.4); }
 .clip { position: absolute; top: 5px; bottom: 5px; border-radius: 5px; background: rgba(242,177,52,.22); box-shadow: inset 0 0 0 1px rgba(242,177,52,.6); pointer-events: none; }
 .clip.rep { opacity: .5; }
 .pk { position: absolute; top: 4px; bottom: 4px; padding: 0; border-radius: 3px; background: rgba(242,177,52,.75); box-shadow: 0 0 0 1px #1d1f23; cursor: pointer; z-index: 2; }

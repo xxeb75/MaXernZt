@@ -1901,7 +1901,7 @@ function renderTimeline() {
       for (const t of nodeKeyTimes(r.node)) { const d = document.createElement('div'); d.className = 'kf sum'; d.style.left = t * tlPps + 'px'; tt.appendChild(d); }
     } else {
       const list = tlOf(r.node)?.[r.prop!] ?? [];
-      for (let i = 0; i < list.length - 1; i++) { const s = document.createElement('div'); s.className = 'seg'; s.style.left = list[i].t * tlPps + 'px'; s.style.width = (list[i + 1].t - list[i].t) * tlPps + 'px'; tt.appendChild(s); }
+      for (let i = 0; i < list.length - 1; i++) { const s = document.createElement('div'); s.className = 'kseg'; s.style.left = list[i].t * tlPps + 'px'; s.style.width = (list[i + 1].t - list[i].t) * tlPps + 'px'; tt.appendChild(s); }
       list.forEach(k => {
         const b = document.createElement('button');
         b.className = 'kf' + (selKF && selKF.node === r.node && selKF.prop === r.prop && Math.abs(selKF.t - k.t) < 1e-6 ? ' sel' : '');
