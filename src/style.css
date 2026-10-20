@@ -350,3 +350,17 @@ input.num:focus { outline: none; border-color: var(--accent); background: #0f111
 #restore .go { height: 30px; padding: 0 14px; }
 #foot { display: flex; justify-content: space-between; gap: 12px; }
 #autosv { color: var(--dim); font-size: 11px; white-space: nowrap; }
+
+/* visite guidée */
+#tour { position: fixed; inset: 0; z-index: 9000; display: none; }
+#tour.open { display: block; }
+#tour-hole { position: fixed; border-radius: 10px; pointer-events: none; box-shadow: 0 0 0 9999px rgba(8,10,12,.74), 0 0 0 2px var(--accent); transition: all .22s ease; }
+#tour-card { position: fixed; width: 340px; max-width: calc(100vw - 24px); padding: 16px 18px 12px; border-radius: 12px; background: #15181b; box-shadow: 0 0 0 1px var(--line), 0 18px 48px rgba(0,0,0,.6); transition: left .22s ease, top .22s ease; }
+#tour-step { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+#tour-title { margin: 0 0 6px; font-size: 17px; font-weight: 700; color: var(--text); }
+#tour-text { margin: 0 0 12px; font-size: 13px; line-height: 1.5; color: #c4cad3; }
+#tour-text b { color: var(--text); }
+#tour-skip { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); margin-bottom: 10px; cursor: pointer; }
+#tour-nav { display: flex; align-items: center; gap: 6px; }
+#tour-nav .sp { flex: 1; }
+#tour-nav .go { height: 32px; padding: 0 16px; }

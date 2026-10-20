@@ -72,6 +72,10 @@ Icône palette dans la barre d'options (pour la sélection) : réglages rapides 
 - **Banque d'images prédécoupées** (icône album, barre d'outils) : onglet *Formes* (étoile, cœur, flèche, éclair, explosion, bulle, disque, cible, croix, triangle, nuage, lune, bande de papier), insérées d'un clic comme éléments détourés ; onglet *Ma banque* : ajoute la sélection (avec ses effets de couleur) ou importe des PNG détourés ; elle est conservée sur l'ordinateur (IndexedDB) entre les sessions, et un clic insère l'image.
 - **Enregistrement automatique** : toutes les 20 s (et quand la fenêtre passe en arrière-plan) un brouillon est gardé sur l'ordinateur tant qu'il y a des modifications non enregistrées (indication en bas à droite). Au lancement suivant, un bandeau propose de le restaurer ou de le supprimer ; un enregistrement normal efface le brouillon.
 
+## Visite guidée
+
+Au premier lancement (sauf si un brouillon est à restaurer), une visite en 10 étapes présente les outils : importer, détourer, ciseaux et déchirure, lettres / accessoires / banque, calques, réglages, trajectoire, timeline, export. Navigation : Suivant / Précédent ou flèches et Entrée, Échap pour quitter ; case « Ne plus afficher au démarrage ». Elle se rouvre avec le bouton **?** (en haut à droite) ou **F1**.
+
 ## Animation
 
 Outil trajectoire (P) : sélectionne un élément (ou un groupe dans le panneau), dessine le chemin à partir de lui ; le chemin est enregistré avec l'élément ou le groupe (les chemins s'additionnent le long de la hiérarchie). ▶ / Espace = lecture et pause, ■ / Échap = arrêt. Réglages : durée, boucle ou aller-retour, vitesse constante ou douce, orienter dans le sens du trajet, rotation continue (nombre de tours sur lui-même par cycle, négatif = sens inverse) ; le bouton flèche circulaire à gauche de la barre du bas fait tourner un élément ou un groupe sur place, sans trajectoire.

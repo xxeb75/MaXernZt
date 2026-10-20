@@ -86,6 +86,8 @@
   <symbol id="i-bank" viewBox="0 0 24 24"><rect x="3.5" y="7.5" width="13" height="13" rx="2"/><path d="M7 7.5V6A1.8 1.8 0 0 1 8.8 4.2H18A1.8 1.8 0 0 1 19.8 6v9.2A1.8 1.8 0 0 1 18 17h-1.5"/><circle cx="8.3" cy="12.3" r="1.3"/><path d="M4 19l4.6-4 3.4 3 2-1.7 2.5 2.7"/></symbol>
   <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.3l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.7l-5.2 2.8 1-5.9L3.5 9.5l5.9-.8z"/></symbol>
   <symbol id="i-bankadd" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M12 8.5v7M8.5 12h7"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M9.4 9.4a2.7 2.7 0 1 1 3.9 2.4c-.9.5-1.3 1-1.3 2"/><circle cx="12" cy="16.8" r=".9" fill="currentColor"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-key" viewBox="0 0 24 24"><path d="M12 3.8l7 8.2-7 8.2-7-8.2z"/><path d="M12 9v6M9 12h6"/></symbol>
   <symbol id="i-hold" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M10 8.5v7M14 8.5v7"/></symbol>
   <symbol id="i-spin" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.4-5.5"/><path d="M19.8 4v4.6h-4.6"/></symbol>
@@ -133,6 +135,7 @@
   </div>
   <span class="sp"></span>
   <div class="grp">
+    <button id="btn-help" class="ib" data-tip="Visite guidée (F1)" data-pos="bottom-left"><svg class="ic"><use href="#i-help"/></svg></button>
     <button id="btn-video" class="ib" data-tip="Exporter la vidéo de l'animation" data-pos="bottom-left"><svg class="ic"><use href="#i-film"/></svg></button>
     <button id="btn-export" class="ib" data-tip="Exporter l'image PNG" data-pos="bottom-left"><svg class="ic"><use href="#i-png"/></svg></button>
     <button id="btn-export-layers" class="ib" data-tip="Exporter les calques (PNG + manifeste)" data-pos="bottom-left"><svg class="ic"><use href="#i-layers-out"/></svg></button>
@@ -269,6 +272,21 @@
   <label class="ctl" data-tip="Intensité de la texture" data-pos="top"><svg class="ic"><use href="#i-contrast"/></svg><input id="pt-amt" type="range" min="0" max="100" value="70"><output id="v-pt-amt"></output></label>
 </div>
 <div id="restore"><svg class="ic"><use href="#i-save"/></svg><span id="restore-txt"></span><button id="restore-yes" class="go">Restaurer</button><button id="restore-no" class="ib" data-tip="Ignorer et supprimer le brouillon" data-pos="bottom"><svg class="ic"><use href="#i-trash"/></svg></button></div>
+<div id="tour" aria-live="polite">
+  <div id="tour-hole"></div>
+  <div id="tour-card" role="dialog" aria-label="Visite guidée">
+    <div id="tour-step"></div>
+    <h3 id="tour-title"></h3>
+    <p id="tour-text"></p>
+    <label id="tour-skip"><input id="tour-never" type="checkbox"> Ne plus afficher au démarrage</label>
+    <div id="tour-nav">
+      <button id="tour-close" class="ib" data-tip="Quitter la visite (Échap)" data-pos="top"><svg class="ic"><use href="#i-x"/></svg></button>
+      <span class="sp"></span>
+      <button id="tour-prev" class="ib" data-tip="Précédent" data-pos="top"><svg class="ic"><use href="#i-kprev"/></svg></button>
+      <button id="tour-next" class="go">Suivant</button>
+    </div>
+  </div>
+</div>
 <div id="fxpop">
   <div id="fx-grid"></div>
   <label class="ctl" data-tip="Durée de l'effet" data-pos="top"><svg class="ic"><use href="#i-clock"/></svg><input id="fx-dur" type="range" min="0.3" max="3" step="0.1" value="1"><output id="v-fx-dur"></output></label>
