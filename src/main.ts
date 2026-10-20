@@ -13,7 +13,7 @@ type Pt = { x: number; y: number };
 /** Trajectoire d'un élément ou d'un groupe : points relatifs au centre, durée en secondes. */
 /** Image clé : l'élément s'arrête au point `u` (0-1) du trajet pendant `hold` s, tourne de `spin` degrés et, en option, se chiffonne en boule. */
 interface Key { u: number; hold: number; spin: number; ball?: boolean }  // ball : true = se chiffonne, false = se déchiffonne, absent = garde l'état précédent
-interface Anim { pts: Pt[]; dur: number; mode: 'loop' | 'pingpong'; ease: 'linear' | 'smooth'; follow: boolean; keys?: Key[] }
+interface Anim { pts: Pt[]; dur: number; mode: 'loop' | 'pingpong'; ease: 'linear' | 'smooth'; follow: boolean; keys?: Key[]; turns?: number }   // turns : tours complets sur soi-même par cycle (négatif = sens inverse)
 interface BallFx { spr: Sprite; sh: Sprite; fold: Sprite; frames: Texture[]; k: number; sz: number }
 /** Accessoire généré (scotch, peinture, punaise…) : type et réglages, pour pouvoir le modifier par double-clic. */
 interface AccSpec { kind: string; p: AccParams }
@@ -1244,7 +1244,7 @@ function syncPanels() {
 // ---- animation : une trajectoire par élément ou par groupe
 const animOf = (n: Node): Anim | undefined => (isGroup(n) ? (n.anim as Anim | undefined) : (n as Layer).anim);
 function setAnim(n: Node, a: Anim | undefined) { if (isGroup(n)) n.anim = a; else (n as Layer).anim = a; }
-const animJson = (a?: Anim) => (a ? { points: a.pts.map(p => [Math.round(p.x), Math.round(p.y)]), duration: a.dur, mode: a.mode, ease: a.ease, follow: a.follow, keys: keysOf(a).map(k => ({ progress: +k.u.toFixed(4), hold: k.hold, spin: k.spin, crumple: ballAfter(a, keysOf(a).indexOf(k)) })) } : null);
+const animJson = (a?: Anim) => (a ? { points: a.pts.map(p => [Math.round(p.x), Math.round(p.y)]), duration: a.dur, mode: a.mode, ease: a.ease, follow: a.follow, turns: a.turns ?? 0, keys: keysOf(a).map(k => ({ progress: +k.u.toFixed(4), hold: k.hold, spin: k.spin, crumple: ballAfter(a, keysOf(a).indexOf(k)) })) } : null);
 
 const lenCache = new WeakMap<Anim, number[]>();
 function cum(a: Anim): number[] {
@@ -1289,7 +1289,7 @@ function evalAnim(a: Anim, time: number) {
   seg(1);
   if (!found) { u = 1; rot = spin; ball = b0; }
   const p = pathAt(a, u);
-  return { x: p.x, y: p.y, u, ang: fwd ? p.ang : p.ang + Math.PI, rot, ball };
+  return { x: p.x, y: p.y, u, ang: fwd ? p.ang : p.ang + Math.PI, rot: rot + (a.turns ?? 0) * 360 * (T / tot), ball };   // rotation continue répartie sur tout le cycle
 }
 
 // ---- chiffonnage : le papier se réduit et se fond dans une boule faite de ses propres couleurs, à la taille proportionnelle de l'élément
@@ -1636,6 +1636,7 @@ $<HTMLInputElement>('anim-dur').oninput = e => editDuration(+(e.target as HTMLIn
 $('btn-amode').onclick = () => editAnim(a => ({ ...a, mode: a.mode === 'loop' ? 'pingpong' : 'loop' }));
 $('btn-aease').onclick = () => editAnim(a => ({ ...a, ease: a.ease === 'linear' ? 'smooth' : 'linear' }));
 $('btn-afollow').onclick = () => editAnim(a => ({ ...a, follow: !a.follow }));
+bindNum('v-turns', v => editAnim(a => ({ ...a, turns: Math.max(-50, Math.min(50, Math.round(v * 100) / 100)) })));
 $('btn-adel').onclick = () => { const ns = animNodes(); if (!ns.length) return; stopPlay(); ns.forEach(n => setAnim(n, undefined)); commit(); };
 $<HTMLInputElement>('tl').oninput = e => { playheadTo((+(e.target as HTMLInputElement).value / 1000) * tlTotal()); };
 $('btn-key').onclick = () => {
@@ -1698,6 +1699,7 @@ function syncAnimBar() {
     $('btn-amode').querySelector('use')!.setAttribute('href', a.mode === 'loop' ? '#i-loop' : '#i-pingpong');
     $('btn-aease').querySelector('use')!.setAttribute('href', a.ease === 'linear' ? '#i-ease-linear' : '#i-ease-smooth');
     $('btn-afollow').classList.toggle('on', a.follow);
+    setNum('v-turns', (a.turns ?? 0) + ' tr');
   }
   if (ak) {
     const k = keysOf(ak.a)[ak.i], h = $<HTMLInputElement>('key-hold'), sp = $<HTMLInputElement>('key-spin');
