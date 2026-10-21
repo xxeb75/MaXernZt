@@ -978,7 +978,7 @@ $('btn-export-layers').onclick = async () => {
   };
   if (tauri) {   // appli Windows : on choisit un dossier et on y écrit tout directement
     try {
-      const dir = await tauri.dialog.open({ directory: true, title: 'Dossier où exporter les calques' }) as string | null;
+      const dir = await tauri.dialog.open({ directory: true, recursive: true, title: 'Dossier où exporter les calques' }) as string | null;
       if (!dir) return;
       const sep = dir.includes('\\') ? '\\' : '/', out = dir + sep + projectName + '_calques';
       await tauri.fs.mkdir(out + sep + 'layers', { recursive: true });

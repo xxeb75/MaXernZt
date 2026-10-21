@@ -1,7 +1,29 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Enregistrement et export de fichiers choisis par l'utilisateur",
-  "windows": ["main"],
-  "permissions": ["core:default", "dialog:default", "fs:allow-read-file", "fs:allow-write-file", "fs:allow-mkdir"]
+  "description": "Enregistrement et export de fichiers vers les emplacements choisis par l'utilisateur",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "fs:allow-read-file",
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        {
+          "path": "**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [
+        {
+          "path": "**"
+        }
+      ]
+    }
+  ]
 }
