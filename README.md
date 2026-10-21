@@ -104,7 +104,7 @@ Tauri (installeur Windows), ONNX natif + DirectML, MobileSAM (clic pour choisir 
 
 - `site/` : la vitrine statique (accueil avec vidéo d'intro, présentation, exemples, tutos dans `site/tutos/`, médias dans `site/media/`). Les exemples ouvrables dans l'appli sont dans `public/examples/*.maxernzt` (lien `app/?open=examples/nom.maxernzt`).
 - `npm run build:web` construit `dist-web/` : la vitrine à la racine et l'appli (chemins relatifs, polices libres embarquées, export des calques en .zip) dans `dist-web/app/`. Les modèles d'IA doivent être présents dans `public/models/`.
-- Publication : workflow GitHub `Publier le site` (`.github/workflows/pages.yml`), **déclenchement manuel** (Actions > Run workflow) après avoir réglé Settings > Pages > Source = « GitHub Actions ». Il télécharge lui-même les modèles d'IA.
+- Publication : workflow GitHub `Publier le site` (`.github/workflows/pages.yml`), se lance **à chaque push sur `main`** (ou à la main : Actions > Run workflow), une fois Settings > Pages > Source réglé sur « GitHub Actions ». Il télécharge lui-même les modèles d'IA.
 - Aperçu local : `npm run build:web` puis `python -m http.server 8080 -d dist-web`, et ouvrir `http://localhost:8080/`.
 - Les polices des lettres utilisent celle de Windows si elle est installée, sinon un équivalent libre (Anton, Gelasio, Tinos, Cousine, EB Garamond, Roboto Slab, Caveat, Barlow, Fira Sans, Archivo Black ; licence OFL).
 

@@ -1,9 +1,11 @@
 # Publication du site (vitrine + appli en ligne) sur GitHub Pages.
-# Déclenchement MANUEL uniquement : Actions > « Publier le site » > Run workflow.
+# Déclenchement : automatique à chaque push sur main, ou à la main (Actions > « Publier le site » > Run workflow).
 # Prérequis (une seule fois) : Settings > Pages > Source = « GitHub Actions ».
 name: Publier le site
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
