@@ -100,6 +100,14 @@ Clic : sélectionner/déplacer · Alt+molette : taille · Maj+molette : rotation
 
 Tauri (installeur Windows), ONNX natif + DirectML, MobileSAM (clic pour choisir l'objet), timeline d'animation, packs d'images.
 
+## Version en ligne (site + appli)
+
+- `site/` : la vitrine statique (accueil avec vidéo d'intro, présentation, exemples, tutos dans `site/tutos/`, médias dans `site/media/`). Les exemples ouvrables dans l'appli sont dans `public/examples/*.maxernzt` (lien `app/?open=examples/nom.maxernzt`).
+- `npm run build:web` construit `dist-web/` : la vitrine à la racine et l'appli (chemins relatifs, polices libres embarquées, export des calques en .zip) dans `dist-web/app/`. Les modèles d'IA doivent être présents dans `public/models/`.
+- Publication : workflow GitHub `Publier le site` (`.github/workflows/pages.yml`), **déclenchement manuel** (Actions > Run workflow) après avoir réglé Settings > Pages > Source = « GitHub Actions ». Il télécharge lui-même les modèles d'IA.
+- Aperçu local : `npm run build:web` puis `python -m http.server 8080 -d dist-web`, et ouvrir `http://localhost:8080/`.
+- Les polices des lettres utilisent celle de Windows si elle est installée, sinon un équivalent libre (Anton, Gelasio, Tinos, Cousine, EB Garamond, Roboto Slab, Caveat, Barlow, Fira Sans, Archivo Black ; licence OFL).
+
 ## Installateur Windows
 
 `npx tauri build` produit, en plus de l'exe, un installateur NSIS en français : `src-tauri/target/release/bundle/nsis/MaXernZt_0.17.0_x64-setup.exe`. Installation **par utilisateur** (sans droits administrateur) dans `%LocalAppData%\MaXernZt`, raccourcis dans le menu Démarrer, désinstallation depuis les paramètres Windows. Les modèles d'IA sont embarqués (≈ 43 Mo). Pour un simple exe sans installateur : `npx tauri build --no-bundle`. La version se règle dans `package.json`, `src-tauri/Cargo.toml` et `src-tauri/tauri.conf.json` (format x.y.z : 0.17.0 s'affiche « 0.17 » dans l'aide, section Crédits).

@@ -1,0 +1,48 @@
+# Publication du site (vitrine + appli en ligne) sur GitHub Pages.
+# Déclenchement MANUEL uniquement : Actions > « Publier le site » > Run workflow.
+# Prérequis (une seule fois) : Settings > Pages > Source = « GitHub Actions ».
+name: Publier le site
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Les modèles d'IA (≈ 49 Mo) ne sont pas dans git : on les télécharge à la construction (licences Apache-2.0).
+      - name: Télécharger les modèles d'IA
+        run: |
+          mkdir -p public/models
+          curl -fL -o public/models/u2netp.onnx https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx
+          curl -fL -o public/models/mobile_sam_image_encoder.onnx https://huggingface.co/Acly/MobileSAM/resolve/main/mobile_sam_image_encoder.onnx
+          curl -fL -o public/models/sam_mask_decoder_single.onnx https://huggingface.co/Acly/MobileSAM/resolve/main/sam_mask_decoder_single.onnx
+      - run: npm run build:web
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

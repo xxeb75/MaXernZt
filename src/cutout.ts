@@ -6,7 +6,7 @@ import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.wasm?url';
 ort.env.wasm.wasmPaths = { wasm: ortWasm };
 ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 2);
 
-const MODEL_URL = '/models/u2netp.onnx';
+const MODEL_URL = import.meta.env.BASE_URL + 'models/u2netp.onnx';
 let sessionPromise: Promise<ort.InferenceSession> | null = null;
 
 export const modelAvailable = () => assetOk(MODEL_URL);

@@ -1,0 +1,38 @@
+/* Polices des lettres découpées : celle de Windows si elle est installée, sinon une police libre équivalente (embarquée),
+   pour que les lettres aient le même aspect partout (navigateur, Mac, Linux…). */
+@font-face { font-family: "Impact"; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: local("Impact"), url(../node_modules/@fontsource/anton/files/anton-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Arial Black"; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: local("Arial Black"), url(../node_modules/@fontsource/archivo-black/files/archivo-black-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Georgia"; font-style: normal; font-weight: 400; font-display: swap;
+  src: local("Georgia"), url(../node_modules/@fontsource/gelasio/files/gelasio-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Georgia"; font-style: normal; font-weight: 700; font-display: swap;
+  src: local("Georgia Bold"), url(../node_modules/@fontsource/gelasio/files/gelasio-latin-700-normal.woff2) format("woff2"); }
+@font-face { font-family: "Times New Roman"; font-style: normal; font-weight: 400; font-display: swap;
+  src: local("Times New Roman"), url(../node_modules/@fontsource/tinos/files/tinos-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Times New Roman"; font-style: normal; font-weight: 700; font-display: swap;
+  src: local("Times New Roman Bold"), url(../node_modules/@fontsource/tinos/files/tinos-latin-700-normal.woff2) format("woff2"); }
+@font-face { font-family: "Courier New"; font-style: normal; font-weight: 400; font-display: swap;
+  src: local("Courier New"), url(../node_modules/@fontsource/cousine/files/cousine-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Courier New"; font-style: normal; font-weight: 700; font-display: swap;
+  src: local("Courier New Bold"), url(../node_modules/@fontsource/cousine/files/cousine-latin-700-normal.woff2) format("woff2"); }
+@font-face { font-family: "Palatino Linotype"; font-style: normal; font-weight: 400; font-display: swap;
+  src: local("Palatino Linotype"), url(../node_modules/@fontsource/eb-garamond/files/eb-garamond-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Palatino Linotype"; font-style: normal; font-weight: 700; font-display: swap;
+  src: local("Palatino Linotype Bold"), url(../node_modules/@fontsource/eb-garamond/files/eb-garamond-latin-700-normal.woff2) format("woff2"); }
+@font-face { font-family: "Rockwell"; font-style: normal; font-weight: 400; font-display: swap;
+  src: local("Rockwell"), url(../node_modules/@fontsource/roboto-slab/files/roboto-slab-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Rockwell"; font-style: normal; font-weight: 700; font-display: swap;
+  src: local("Rockwell Bold"), url(../node_modules/@fontsource/roboto-slab/files/roboto-slab-latin-700-normal.woff2) format("woff2"); }
+@font-face { font-family: "Segoe Script"; font-style: normal; font-weight: 400; font-display: swap;
+  src: local("Segoe Script"), url(../node_modules/@fontsource/caveat/files/caveat-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Segoe Script"; font-style: normal; font-weight: 700; font-display: swap;
+  src: local("Segoe Script Bold"), url(../node_modules/@fontsource/caveat/files/caveat-latin-700-normal.woff2) format("woff2"); }
+@font-face { font-family: "Bahnschrift"; font-style: normal; font-weight: 400; font-display: swap;
+  src: local("Bahnschrift"), url(../node_modules/@fontsource/barlow/files/barlow-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Bahnschrift"; font-style: normal; font-weight: 700; font-display: swap;
+  src: local("Bahnschrift Bold"), url(../node_modules/@fontsource/barlow/files/barlow-latin-700-normal.woff2) format("woff2"); }
+@font-face { font-family: "Trebuchet MS"; font-style: normal; font-weight: 400; font-display: swap;
+  src: local("Trebuchet MS"), url(../node_modules/@fontsource/fira-sans/files/fira-sans-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Trebuchet MS"; font-style: normal; font-weight: 700; font-display: swap;
+  src: local("Trebuchet MS Bold"), url(../node_modules/@fontsource/fira-sans/files/fira-sans-latin-700-normal.woff2) format("woff2"); }

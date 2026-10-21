@@ -2,8 +2,8 @@
 import * as ort from 'onnxruntime-web/wasm';
 import { makeCanvas, assetOk } from './sticker';
 
-const ENC = '/models/mobile_sam_image_encoder.onnx';
-const DEC = '/models/sam_mask_decoder_single.onnx';
+const ENC = import.meta.env.BASE_URL + 'models/mobile_sam_image_encoder.onnx';
+const DEC = import.meta.env.BASE_URL + 'models/sam_mask_decoder_single.onnx';
 export type SamPoint = { x: number; y: number; label: 0 | 1 };
 
 let sessions: Promise<[ort.InferenceSession, ort.InferenceSession]> | null = null;

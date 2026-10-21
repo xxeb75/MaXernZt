@@ -22,6 +22,7 @@ export const HELP: HelpSection[] = [
       <li><b>Au centre</b> : la feuille. <b>À droite</b> : le panneau des calques et des groupes.</li>
       <li><b>En bas</b> : la timeline et, dessous, la barre d'animation de l'élément sélectionné.</li>
     </ul>
+    <p><b>Version en ligne ou Windows</b> : les deux font la même chose ; la version Windows enregistre directement dans le fichier choisi et exporte dans un dossier, la version en ligne passe par le navigateur (Chrome ou Edge recommandés) et télécharge les fichiers. Si l'écran est étroit, la barre d'options passe sur deux lignes.</p>
     <p>Passe la souris sur n'importe quel bouton : une infobulle donne son nom et son raccourci. La <b>visite guidée</b> se relance depuis le bouton en haut de cette fenêtre.</p>` },
   {
     id: 'import', title: 'Importer des images', icon: 'import', html: `
@@ -29,6 +30,7 @@ export const HELP: HelpSection[] = [
       <li>${ic('import')} ouvre un sélecteur ; on peut aussi <b>glisser-déposer</b> des fichiers sur la fenêtre ou <b>coller</b> une image avec ${k('Ctrl')}+${k('V')}.</li>
       <li>Les images sont réduites à 1 200 px de côté maximum et arrivent au centre de la feuille.</li>
       <li>Un fichier <b>.maxernzt</b> glissé sur la fenêtre ouvre le projet.</li>
+      <li>Sur le site, les <b>exemples</b> s'ouvrent directement dans l'application ; ce sont des projets <b>.maxernzt</b> comme les tiens (enregistre-les sous un autre nom avant de les modifier).</li>
       <li>Une image déjà <b>détourée</b> (PNG transparent) est prête à l'emploi ; sinon utilise les outils de détourage.</li>
     </ul>` },
   {
@@ -197,7 +199,7 @@ export const HELP: HelpSection[] = [
     <h4>${ic('png')} Image PNG</h4>
     <p>Exporte la feuille telle qu'elle est (fond et texture compris).</p>
     <h4>${ic('layers-out')} Calques PNG + manifeste</h4>
-    <p>Choisis un dossier : un PNG par élément (avec contour et effets) est écrit dans <code>…_calques/layers</code>, avec un <code>manifest.json</code> (position, rotation, échelle, ordre, groupe, trajets et images clés) utilisable dans un moteur de jeu ou d'animation.</p>` },
+    <p>Dans l'application Windows, choisis un dossier : un PNG par élément (avec contour et effets) est écrit dans <code>…_calques/layers</code>, avec un <code>manifest.json</code> (position, rotation, échelle, ordre, groupe, trajets et images clés) utilisable dans un moteur de jeu ou d'animation. <b>Dans le navigateur</b>, tout est regroupé dans un seul fichier <code>…_calques.zip</code> (dossier <code>layers/</code> + <code>manifest.json</code>).</p>` },
   {
     id: 'project', title: 'Projet, sauvegarde et brouillon', icon: 'save', html: `
     <ul>

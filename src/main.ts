@@ -5,6 +5,8 @@ import { makeSeparate, makeGrouped, makeOne, FONTS, PALETTES, type LetterOpts, t
 import { ACC_KINDS, ACC_COLORS, ACC_DEFAULTS, type AccCat, type AccKind, type AccParams } from './accessories';
 import { encodeVideo, videoSupported } from './video';
 import { samAvailable, segment, forget, type SamPoint } from './sam';
+import './fonts.css';
+import { makeZip, type ZipEntry } from './zip';
 import { HELP } from './help';
 import { type PaperKind, PAPERS, renderPaperOverlay } from './paper';
 import { SHAPES, makeShape, bankList, bankAdd, bankRemove, bankCanvas, kvGet, kvPut, kvDel, type BankItem } from './bank';
@@ -995,6 +997,7 @@ function extractPaper(): HTMLCanvasElement {
 }
 function download(blob: Blob | null, name: string) {
   if (!blob) return;
+  const sink = (window as unknown as { __sink?: (b: Blob, n: string) => void }).__sink; if (sink) { sink(blob, name); return; }   // outils de génération des exemples du site
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.style.display = 'none';
   document.body.appendChild(a); a.click();
   setTimeout(() => { a.remove(); URL.revokeObjectURL(a.href); }, 120000); // un gros fichier ne doit pas perdre son URL en cours de téléchargement
@@ -1041,12 +1044,18 @@ ${out}`, 'ok');
     } catch (e) { toast('Export impossible', String(e), 'err'); }
     return;
   }
-  for (let z = 0; z < layers.length; z++) {
-    await new Promise<void>(r => layers[z].baked.toBlob(b => { download(b, name(layers[z], z)); r(); }));
-    await new Promise(r => setTimeout(r, 150));
-  }
-  download(new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }), 'manifest.json');
-  status('Calques exportés (PNG + manifest.json) dans Téléchargements ; range les PNG dans un dossier « layers ».');
+  // navigateur : un seul fichier .zip (dossier layers/ + manifest.json)
+  try {
+    const entries: ZipEntry[] = [];
+    for (let z = 0; z < layers.length; z++) {
+      const b = await new Promise<Blob | null>(r => layers[z].baked.toBlob(r));
+      entries.push({ name: 'layers/' + name(layers[z], z), data: new Uint8Array(await b!.arrayBuffer()) });
+    }
+    entries.push({ name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) });
+    const zip = makeZip(entries);
+    download(zip, projectName + '_calques.zip');
+    status(`Calques exportés : ${projectName}_calques.zip (${layers.length} PNG + manifest.json).`); toast('Calques exportés', `${projectName}_calques.zip — ${layers.length} PNG + manifest.json (${fmtSize(zip.size)})`, 'ok');
+  } catch (e) { toast('Export impossible', String(e), 'err'); }
 };
 
 // ---- projet : sauvegarde / chargement (.maxernzt = JSON, images en PNG base64, partagées si identiques)
@@ -1066,7 +1075,8 @@ function projectJson(): string {
   const out = layers.map(l => {
     let id = ids.get(l.base);
     if (!id) { id = 'img' + ids.size; ids.set(l.base, id); images[id] = urlOf(l.base); }
-    return { id: l.id, name: l.name, visible: l.visible, locked: l.locked || undefined, fx: l.fx, anim: l.anim, tl: l.tl, acc: l.acc, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: l.box.x, y: l.box.y, rotation: l.box.rotation, scaleX: l.box.scale.x, scaleY: l.box.scale.y };
+    const r = restPose.get(l);   // en lecture ou en pause sur la timeline, on enregistre la pose de repos, pas la pose animée
+    return { id: l.id, name: l.name, visible: l.visible, locked: l.locked || undefined, fx: l.fx, anim: l.anim, tl: l.tl, acc: l.acc, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: r?.x ?? l.box.x, y: r?.y ?? l.box.y, rotation: r?.r ?? l.box.rotation, scaleX: r?.sx ?? l.box.scale.x, scaleY: r?.sy ?? l.box.scale.y };
   });
   return JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, paperTex: paperKind, paperAmt, tree: serialize(root), duration: tlDurManual, layers: out, images });
 }
@@ -2359,6 +2369,25 @@ function syncTimeline() {
 
 // accès console pour les tests
 
+
+// ---- polices : chargées d'avance (sinon les premières lettres seraient dessinées avec une police de secours)
+Promise.all(FONTS.flatMap(f => [document.fonts.load(`48px "${f}"`), document.fonts.load(`bold 48px "${f}"`)])).then(() => { try { renderPreview(); } catch { /* panneau fermé */ } }).catch(() => {});
+
+// ---- exemple ouvert depuis le site : app/?open=examples/nom.maxernzt (dossier public/examples)
+const openParam = new URLSearchParams(location.search).get('open');
+if (openParam && /^[\w./-]+\.maxernzt$/.test(openParam) && !openParam.includes('..')) {
+  (async () => {
+    try {
+      const r = await fetch(import.meta.env.BASE_URL + openParam);
+      if (!r.ok) throw new Error('exemple introuvable (' + r.status + ')');
+      await loadProject(new File([await r.text()], baseName(openParam)));
+      dirty = false; $('btn-save').classList.remove('dirty');
+      if (anyAnim()) startPlay();   // l'exemple se lance tout de suite ; un clic sur la feuille reprend la main
+      history.replaceState(null, '', location.pathname);   // l'adresse redevient celle de l'appli : un rechargement ne rouvre pas l'exemple
+    } catch (e) { toast("Exemple impossible à ouvrir", String(e), 'err'); }
+  })();
+}
+
 // ---- enregistrement automatique : un brouillon récent est gardé sur l'appareil ; au démarrage on propose de le restaurer
 let autoRev = -1, autoBusy = false;
 async function autoSave() {
@@ -2523,8 +2552,8 @@ addEventListener('beforeunload', () => { void autoSave(); });
   }, true);
   // premier lancement (ou tant que « ne plus afficher » n'est pas coché), sans gêner la restauration d'un brouillon
   let seen = false; try { seen = localStorage.getItem('maxernzt.tour') === '1'; } catch { /* ignoré */ }
-  if (!seen) setTimeout(async () => { const a = await kvGet('autosave').catch(() => undefined); if (!a) open(); }, 600);
+  if (!seen && !new URLSearchParams(location.search).has('open')) setTimeout(async () => { const a = await kvGet('autosave').catch(() => undefined); if (!a) open(); }, 600);
 }
-(window as any).__app = { autoSave, app, loadProject, saveProject, addLayer, layers, replaceBase, cutoutFlat, get selected() { return selected; } };
+(window as any).__app = { projectJson, autoSave, app, loadProject, saveProject, addLayer, layers, replaceBase, cutoutFlat, get selected() { return selected; } };
 commit();
 status('Glisse des images ici, ou colle-les (Ctrl+V).');
