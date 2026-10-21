@@ -22,7 +22,7 @@ export const HELP: HelpSection[] = [
       <li><b>Au centre</b> : la feuille. <b>À droite</b> : le panneau des calques et des groupes.</li>
       <li><b>En bas</b> : la timeline et, dessous, la barre d'animation de l'élément sélectionné.</li>
     </ul>
-    <p>Passe la souris sur n'importe quel bouton : une infobulle donne son nom et son raccourci. La <b>visite guidée</b> se relance depuis le bouton en bas de cette fenêtre.</p>` },
+    <p>Passe la souris sur n'importe quel bouton : une infobulle donne son nom et son raccourci. La <b>visite guidée</b> se relance depuis le bouton en haut de cette fenêtre.</p>` },
   {
     id: 'import', title: 'Importer des images', icon: 'import', html: `
     <ul>
@@ -244,4 +244,30 @@ export const HELP: HelpSection[] = [
       <tr><td>${k('Ctrl')}+${k('O')}</td><td>Ouvrir</td></tr>
       <tr><td>${k('F1')}</td><td>Cette aide</td></tr>
     </table>` },
+  {
+    id: 'credits', title: 'Crédits', icon: 'logo', html: `
+    <div class="credits-head">
+      <svg class="mark" viewBox="0 0 28 28" aria-hidden="true"><path d="M3 6.5 7 4.6l4 1.7 4-1.8 4 1.7 5-1.6.6 18.6L4.4 25.6z" fill="#f2b134"/><path d="M8.4 20.2v-9.6l5.6 6 5.6-6v9.6" fill="none" stroke="#1d1f23" stroke-width="3.1" stroke-linejoin="round" stroke-linecap="round"/></svg>
+      <div><div class="credits-name">Ma<b>X</b>ernZt</div><div class="credits-sub">Collage en papier découpé et animation · version ${__APP_VERSION__}</div></div>
+    </div>
+    <h4>Conception</h4>
+    <table class="credits"><tr><td><b>Sébastien Sonet</b></td><td>Concepteur : idée, cahier des charges, direction artistique et essais.</td></tr></table>
+    <h4>Développement</h4>
+    <table class="credits"><tr><td><b>Claude</b> (Anthropic)</td><td>Programmation de l'application, réalisée en collaboration avec le concepteur.</td></tr></table>
+    <h4>Intelligence artificielle embarquée (fonctionne sans internet)</h4>
+    <table class="credits">
+      <tr><td><b>U²-Net</b> (u2netp)</td><td>Détourage automatique. Xuebin Qin et al. ; modèle diffusé par le projet rembg. Licence Apache-2.0.</td></tr>
+      <tr><td><b>MobileSAM</b></td><td>Détourage au clic. Chaoning Zhang et al., d'après Segment Anything (Meta AI). Licence Apache-2.0.</td></tr>
+    </table>
+    <h4>Technologies</h4>
+    <table class="credits">
+      <tr><td><b>PixiJS</b></td><td>Affichage 2D accéléré de la feuille. Licence MIT.</td></tr>
+      <tr><td><b>Tauri</b></td><td>Application Windows native. Licences MIT / Apache-2.0.</td></tr>
+      <tr><td><b>ONNX Runtime Web</b></td><td>Exécution des modèles d'IA dans l'application. Licence MIT.</td></tr>
+      <tr><td><b>mp4-muxer</b>, <b>webm-muxer</b></td><td>Assemblage des fichiers vidéo exportés. Licence MIT.</td></tr>
+      <tr><td><b>Vite</b>, <b>TypeScript</b></td><td>Outils de construction et langage du code. Licences MIT et Apache-2.0.</td></tr>
+    </table>
+    <h4>Polices des lettres découpées</h4>
+    <p>Les lettres utilisent les polices installées sous Windows (Impact, Arial Black, Georgia, Times New Roman, Courier New, Palatino Linotype, Rockwell, Segoe Script, Bahnschrift, Trebuchet MS), qui appartiennent à leurs auteurs respectifs.</p>
+    <p class="credits-foot">Les noms de projets cités appartiennent à leurs propriétaires. © Sébastien Sonet — tous droits réservés sur la conception de MaXernZt.</p>` },
 ];

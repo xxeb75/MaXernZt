@@ -99,3 +99,7 @@ Clic : sélectionner/déplacer · Alt+molette : taille · Maj+molette : rotation
 ## Pistes
 
 Tauri (installeur Windows), ONNX natif + DirectML, MobileSAM (clic pour choisir l'objet), timeline d'animation, packs d'images.
+
+## Crédits
+
+Conception : **Sébastien Sonet**. Développement : Claude (Anthropic), en collaboration avec le concepteur. IA embarquée : U²-Net (u2netp) et MobileSAM (Apache-2.0). Technologies : PixiJS, Tauri, ONNX Runtime Web, mp4-muxer / webm-muxer, Vite, TypeScript. Le détail se trouve dans l'aide (section « Crédits »).
