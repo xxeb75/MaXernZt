@@ -5,6 +5,7 @@ import { makeSeparate, makeGrouped, makeOne, FONTS, PALETTES, type LetterOpts, t
 import { ACC_KINDS, ACC_COLORS, ACC_DEFAULTS, type AccCat, type AccKind, type AccParams } from './accessories';
 import { encodeVideo, videoSupported } from './video';
 import { samAvailable, segment, forget, type SamPoint } from './sam';
+import { HELP } from './help';
 import { type PaperKind, PAPERS, renderPaperOverlay } from './paper';
 import { SHAPES, makeShape, bankList, bankAdd, bankRemove, bankCanvas, kvGet, kvPut, kvDel, type BankItem } from './bank';
 import { type LayerFx, FX0, FX_PRESETS, fxNeutral, applyLayerFx } from './filters';
@@ -2366,11 +2367,58 @@ addEventListener('beforeunload', () => { void autoSave(); });
   document.addEventListener('pointerleave', hide);
 }
 
+
+// ---- aide : sections à gauche, contenu à droite, recherche par mot ; F1 ou bouton ?
+{
+  const el = $('help'), nav = $('help-nav'), body = $('help-body'), q = $<HTMLInputElement>('help-q');
+  let cur = HELP[0].id;
+  const textOf = (s: { title: string; html: string }) => (s.title + ' ' + s.html.replace(/<[^>]+>/g, ' ')).toLowerCase();
+  const norm = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const matches = () => { const w = norm(q.value.trim()); return w ? HELP.filter(s => norm(textOf(s)).includes(w)) : HELP; };
+  const show = (id: string) => {
+    cur = id; const s = HELP.find(x => x.id === id)!;
+    body.innerHTML = `<h2><svg class="ic"><use href="#i-${s.icon}"/></svg>${s.title}</h2>` + s.html; body.scrollTop = 0;
+    const w = q.value.trim();
+    if (w) {   // met le mot cherché en évidence dans le texte (hors balises)
+      const re = new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      const walk = (n: Element) => {
+        for (const c of [...n.childNodes]) {
+          if (c.nodeType === 3 && c.textContent && re.test(c.textContent)) { re.lastIndex = 0; const sp = document.createElement('span'); sp.innerHTML = c.textContent.replace(/[&<]/g, m => (m === '&' ? '&amp;' : '&lt;')).replace(re, m => `<mark class="hl">${m}</mark>`); c.replaceWith(...sp.childNodes); }
+          else if (c.nodeType === 1 && (c as Element).tagName !== "svg") walk(c as Element);
+        }
+      };
+      walk(body);
+    }
+    nav.querySelectorAll('.hn').forEach(b => b.classList.toggle('on', (b as HTMLElement).dataset.id === id));
+  };
+  const renderNav = () => {
+    const list = matches(); nav.innerHTML = '';
+    if (!list.length) { nav.innerHTML = '<div class="none">Aucune section ne contient ce mot.</div>'; body.innerHTML = ''; return; }
+    for (const s of list) {
+      const b = document.createElement('button'); b.className = 'hn'; b.dataset.id = s.id;
+      b.innerHTML = `<svg class="ic"><use href="#i-${s.icon}"/></svg><span></span>`; (b.querySelector('span') as HTMLElement).textContent = s.title;
+      b.onclick = () => show(s.id); nav.appendChild(b);
+    }
+    show(list.some(s => s.id === cur) ? cur : list[0].id);
+  };
+  const open = (id?: string) => { if (id) cur = id; q.value = ''; el.classList.add('open'); renderNav(); };
+  const close = () => el.classList.remove('open');
+  q.oninput = renderNav;
+  $('btn-help').onclick = () => (el.classList.contains('open') ? close() : open());
+  $('help-close').onclick = close;
+  $('help-tour').onclick = () => { close(); window.dispatchEvent(new Event('maxernzt-tour')); };
+  el.addEventListener('pointerdown', e => { if (e.target === el) close(); });
+  addEventListener('keydown', e => {
+    if (e.key === 'F1') { e.preventDefault(); e.stopPropagation(); if (el.classList.contains('open')) close(); else open(); return; }
+    if (e.key === 'Escape' && el.classList.contains('open')) { e.stopPropagation(); close(); }
+  }, true);
+}
+
 // ---- visite guidée : s'ouvre au premier lancement, ensuite avec « ? » ou F1
 {
   interface Step { sel: string | null; title: string; text: string }
   const STEPS: Step[] = [
-    { sel: null, title: 'Bienvenue dans MaXernZt', text: "Compose des <b>collages en papier découpé</b> puis <b>anime-les</b> : chaque élément reste indépendant. Cette visite dure une minute ; tu peux la quitter à tout moment et la rouvrir avec <b>?</b> (ou F1)." },
+    { sel: null, title: 'Bienvenue dans MaXernZt', text: "Compose des <b>collages en papier découpé</b> puis <b>anime-les</b> : chaque élément reste indépendant. Cette visite dure une minute ; tu peux la quitter à tout moment. Le bouton <b>?</b> (ou F1) ouvre l'<b>aide complète</b>, d'où l'on relance cette visite." },
     { sel: '#btn-import', title: 'Importer des images', text: "Clique ici, <b>glisse-dépose</b> des fichiers sur la feuille, ou colle une image avec <b>Ctrl+V</b>. Un projet <b>.maxernzt</b> glissé sur la fenêtre s'ouvre aussi." },
     { sel: '#btn-ai', title: 'Détourer', text: "<b>A</b> détoure automatiquement l'objet principal (IA locale, sans internet). <b>C</b> détoure au clic : clique ce que tu veux garder. La gomme <b>B</b> efface un fond uni." },
     { sel: '#btn-scissors', title: 'Ciseaux et déchirure', text: "<b>X</b> : trace une découpe aux ciseaux. <b>R</b> : déchire une feuille en suivant ton geste. Les contours deviennent irréguliers, comme du vrai papier." },
@@ -2417,10 +2465,9 @@ addEventListener('beforeunload', () => { void autoSave(); });
   $('tour-next').onclick = () => { if (i < STEPS.length - 1) { i++; render(); } else close(); };
   $('tour-prev').onclick = () => { if (i) { i--; render(); } };
   $('tour-close').onclick = close;
-  $('btn-help').onclick = open;
+  addEventListener('maxernzt-tour', open);
   addEventListener('resize', () => tourEl.classList.contains('open') && place());
   addEventListener('keydown', e => {
-    if (e.key === 'F1') { e.preventDefault(); if (tourEl.classList.contains('open')) close(); else open(); return; }
     if (!tourEl.classList.contains('open')) return;
     if (e.key === 'Escape') { e.stopPropagation(); close(); } else if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); $('tour-next').click(); } else if (e.key === 'ArrowLeft') { e.preventDefault(); $('tour-prev').click(); }
   }, true);

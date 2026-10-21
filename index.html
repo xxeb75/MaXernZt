@@ -136,7 +136,7 @@
   </div>
   <span class="sp"></span>
   <div class="grp">
-    <button id="btn-help" class="ib" data-tip="Visite guidée (F1)" data-pos="bottom-left"><svg class="ic"><use href="#i-help"/></svg></button>
+    <button id="btn-help" class="ib" data-tip="Aide : toutes les fonctions, section par section (F1)" data-pos="bottom-left"><svg class="ic"><use href="#i-help"/></svg></button>
     <button id="btn-video" class="ib" data-tip="Exporter la vidéo de l'animation" data-pos="bottom-left"><svg class="ic"><use href="#i-film"/></svg></button>
     <button id="btn-export" class="ib" data-tip="Exporter l'image PNG" data-pos="bottom-left"><svg class="ic"><use href="#i-png"/></svg></button>
     <button id="btn-export-layers" class="ib" data-tip="Exporter les calques (PNG + manifeste)" data-pos="bottom-left"><svg class="ic"><use href="#i-layers-out"/></svg></button>
@@ -273,6 +273,21 @@
   <label class="ctl" data-tip="Intensité de la texture" data-pos="top"><svg class="ic"><use href="#i-contrast"/></svg><input id="pt-amt" type="range" min="0" max="100" value="70"><output id="v-pt-amt"></output></label>
 </div>
 <div id="restore"><svg class="ic"><use href="#i-save"/></svg><span id="restore-txt"></span><button id="restore-yes" class="go">Restaurer</button><button id="restore-no" class="ib" data-tip="Ignorer et supprimer le brouillon" data-pos="bottom"><svg class="ic"><use href="#i-trash"/></svg></button></div>
+<div id="help" role="dialog" aria-label="Aide">
+  <div id="help-panel">
+    <header id="help-head">
+      <svg class="ic"><use href="#i-help"/></svg><b>Aide</b>
+      <input id="help-q" type="search" placeholder="Rechercher une fonction…" autocomplete="off" spellcheck="false">
+      <span class="sp"></span>
+      <button id="help-tour" class="go">Visite guidée</button>
+      <button id="help-close" class="ib" data-tip="Fermer (Échap)" data-pos="bottom-left"><svg class="ic"><use href="#i-x"/></svg></button>
+    </header>
+    <div id="help-main">
+      <nav id="help-nav"></nav>
+      <article id="help-body"></article>
+    </div>
+  </div>
+</div>
 <div id="tour" aria-live="polite">
   <div id="tour-hole"></div>
   <div id="tour-card" role="dialog" aria-label="Visite guidée">

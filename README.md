@@ -72,9 +72,13 @@ Icône palette dans la barre d'options (pour la sélection) : réglages rapides 
 - **Banque d'images prédécoupées** (icône album, barre d'outils) : onglet *Formes* (étoile, cœur, flèche, éclair, explosion, bulle, disque, cible, croix, triangle, nuage, lune, bande de papier), insérées d'un clic comme éléments détourés ; onglet *Ma banque* : ajoute la sélection (avec ses effets de couleur) ou importe des PNG détourés ; elle est conservée sur l'ordinateur (IndexedDB) entre les sessions, et un clic insère l'image.
 - **Enregistrement automatique** : toutes les 20 s (et quand la fenêtre passe en arrière-plan) un brouillon est gardé sur l'ordinateur tant qu'il y a des modifications non enregistrées (indication en bas à droite). Au lancement suivant, un bandeau propose de le restaurer ou de le supprimer ; un enregistrement normal efface le brouillon.
 
+## Aide intégrée
+
+Bouton **?** (en haut à droite) ou **F1** : une fenêtre d'aide avec la liste des sections à gauche et le contenu à droite, plus un champ de recherche qui filtre les sections et surligne le mot. Sections : prise en main, importer, détourer, ciseaux et déchirure, lettres, accessoires, banque d'images, calques / groupes / verrous, sélection et aimantation, effets de couleur, feuille (format, couleur, texture), animation (trajectoires), timeline et images clés, exports, projet / sauvegarde / brouillon, raccourcis clavier. Le contenu est dans `src/help.ts`. Le bouton « Visite guidée » de l'aide relance la visite.
+
 ## Visite guidée
 
-Au premier lancement (sauf si un brouillon est à restaurer), une visite en 10 étapes présente les outils : importer, détourer, ciseaux et déchirure, lettres / accessoires / banque, calques, réglages, trajectoire, timeline, export. Navigation : Suivant / Précédent ou flèches et Entrée, Échap pour quitter ; case « Ne plus afficher au démarrage ». Elle se rouvre avec le bouton **?** (en haut à droite) ou **F1**.
+Au premier lancement (sauf si un brouillon est à restaurer), une visite en 10 étapes présente les outils : importer, détourer, ciseaux et déchirure, lettres / accessoires / banque, calques, réglages, trajectoire, timeline, export. Navigation : Suivant / Précédent ou flèches et Entrée, Échap pour quitter ; case « Ne plus afficher au démarrage ». Elle se relance depuis l'aide (bouton « Visite guidée »).
 
 ## Animation
 
