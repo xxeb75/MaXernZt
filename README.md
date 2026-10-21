@@ -100,6 +100,10 @@ Clic : sélectionner/déplacer · Alt+molette : taille · Maj+molette : rotation
 
 Tauri (installeur Windows), ONNX natif + DirectML, MobileSAM (clic pour choisir l'objet), timeline d'animation, packs d'images.
 
+## Installateur Windows
+
+`npx tauri build` produit, en plus de l'exe, un installateur NSIS en français : `src-tauri/target/release/bundle/nsis/MaXernZt_0.17.0_x64-setup.exe`. Installation **par utilisateur** (sans droits administrateur) dans `%LocalAppData%\MaXernZt`, raccourcis dans le menu Démarrer, désinstallation depuis les paramètres Windows. Les modèles d'IA sont embarqués (≈ 43 Mo). Pour un simple exe sans installateur : `npx tauri build --no-bundle`. La version se règle dans `package.json`, `src-tauri/Cargo.toml` et `src-tauri/tauri.conf.json` (format x.y.z : 0.17.0 s'affiche « 0.17 » dans l'aide, section Crédits).
+
 ## Crédits
 
 Conception : **Sébastien Sonet**. Développement : Claude (Anthropic), en collaboration avec le concepteur. IA embarquée : U²-Net (u2netp) et MobileSAM (Apache-2.0). Technologies : PixiJS, Tauri, ONNX Runtime Web, mp4-muxer / webm-muxer, Vite, TypeScript. Le détail se trouve dans l'aide (section « Crédits »).
