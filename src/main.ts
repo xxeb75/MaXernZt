@@ -268,7 +268,14 @@ $<HTMLInputElement>('file').onchange = e => { const i = e.target as HTMLInputEle
 addEventListener('dragover', e => { e.preventDefault(); if (e.dataTransfer?.types.includes('Files')) document.body.classList.add('drop'); });
 addEventListener('dragleave', () => document.body.classList.remove('drop'));
 addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('drop'); if (e.dataTransfer) importAll(e.dataTransfer.files); });
-addEventListener('paste', e => { if (e.clipboardData) importAll(e.clipboardData.files); });
+let pasteSeen = 0;   // le collage passe par l'événement « paste » ; si le navigateur ne l'envoie pas, Ctrl+V colle quand même l'élément copié
+addEventListener('paste', e => {
+  if ((e.target as HTMLElement | null)?.closest?.('input, textarea')) return;
+  pasteSeen = Date.now();
+  const fl = e.clipboardData?.files;
+  if (fl && fl.length) { importAll(fl); return; }   // une image copiée ailleurs
+  if (pasteClip()) e.preventDefault();              // sinon : l'élément copié dans l'appli
+});
 
 // ---- détourage
 /** Remplace la base d'un calque en gardant l'image à la même place (x0,y0 = décalage de la nouvelle base dans l'ancienne). */
@@ -486,6 +493,47 @@ function dupNodes(nodes: Node[]) {
   reflow(); setSelection(fresh); commit();
 }
 $('btn-dup').onclick = () => dupNodes(selectedNodes());
+
+// ---- copier / couper / coller des éléments et des groupes (Ctrl+C / Ctrl+X / Ctrl+V) ; chaque collage se décale un peu
+interface ClipLayer { name: string; visible: boolean; locked?: boolean; fx?: LayerFx; anim?: Anim; tl?: TL; acc?: AccSpec; letter?: LetterSpec; base: HTMLCanvasElement; border: number; shadow: number; rough: number; x: number; y: number; rot: number; sx: number; sy: number }
+type ClipNode = { g: true; name: string; collapsed: boolean; visible: boolean; locked?: boolean; anim?: unknown; tl?: unknown; kids: ClipNode[] } | { g: false; l: ClipLayer };
+let clip: ClipNode[] = [], pasteN = 0;
+function captureNode(n: Node): ClipNode {
+  if (isGroup(n)) return { g: true, name: n.name, collapsed: n.collapsed, visible: n.visible, locked: n.locked, anim: n.anim, tl: n.tl, kids: n.children.map(captureNode) };
+  const l = n as Layer, r = restPose.get(l);
+  return { g: false, l: { name: l.name, visible: l.visible, locked: l.locked, fx: l.fx, anim: l.anim, tl: l.tl, acc: l.acc, letter: l.letter, base: l.base, border: l.border, shadow: l.shadow, rough: l.rough, x: r?.x ?? l.box.x, y: r?.y ?? l.box.y, rot: r?.r ?? l.box.rotation, sx: r?.sx ?? l.box.scale.x, sy: r?.sy ?? l.box.scale.y } };
+}
+function buildClip(c: ClipNode, parent: Group, d: number, out: Layer[]) {
+  if (c.g) {
+    const g: Group = { id: groupSeq++, name: c.name, collapsed: c.collapsed, visible: c.visible, locked: c.locked, anim: c.anim, tl: c.tl, children: [], parent };
+    parent.children.push(g); c.kids.forEach(k => buildClip(k, g, d, out)); return;
+  }
+  const s = c.l, nl = addLayer(s.base, s.name, { pos: { x: s.x + d, y: s.y + d }, rot: s.rot, scale: { x: s.sx, y: s.sy } }, { border: s.border, shadow: s.shadow, rough: s.rough });
+  nl.letter = s.letter; nl.visible = s.visible; nl.locked = s.locked; nl.acc = s.acc; nl.anim = s.anim; nl.tl = s.tl;
+  if (s.fx) { nl.fx = s.fx; refresh(nl); }
+  detach(nl); attach(nl, parent); out.push(nl);
+}
+function copySel(): boolean {
+  const ns = selectedNodes(); if (!ns.length) return false;
+  stopPlay(); clip = ns.map(captureNode); pasteN = 0;
+  try { void navigator.clipboard?.writeText(' ').catch(() => {}); } catch { /* ignoré : une ancienne image du presse-papiers ne doit pas passer avant l'élément copié */ }
+  const n = ns.reduce((a, x) => a + leavesOf(x).length, 0);
+  status(`${n} élément${n > 1 ? 's' : ''} copié${n > 1 ? 's' : ''} : Ctrl+V pour coller.`);
+  return true;
+}
+function pasteClip(): boolean {
+  if (!clip.length) return false;
+  stopPlay(); pasteN++;
+  const fresh: Layer[] = [];
+  for (const c of clip) {
+    const tmp: Group = { id: -1, name: '', collapsed: false, visible: true, children: [], parent: null };
+    buildClip(c, tmp, 30 * pasteN, fresh);
+    const copy = tmp.children[0]; tmp.children = []; copy.parent = null; attach(copy, root);
+  }
+  reflow(); setSelection(fresh); commit(); status(`${fresh.length} élément${fresh.length > 1 ? 's' : ''} collé${fresh.length > 1 ? 's' : ''}.`);
+  return true;
+}
+
 
 /** Centre de la sélection en coordonnées monde (calque seul : son centre ; sinon centre de la boîte englobante). */
 function selCenterWorld(): Pt {
@@ -1309,6 +1357,8 @@ addEventListener('keydown', e => {
     if (k === 'o') { e.preventDefault(); $('btn-open').click(); return; }
     if (k === 'l' && !e.shiftKey) { e.preventDefault(); $('btn-lock').click(); return; }
     if (typing) return;
+    if (k === 'v' && !e.shiftKey && t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA') { const t0 = Date.now(); setTimeout(() => { if (pasteSeen < t0) pasteClip(); }, 80); return; }
+    if ((k === 'c' || k === 'x') && !e.shiftKey && t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA' && !(window.getSelection()?.toString())) { if (copySel()) { e.preventDefault(); if (k === 'x') $('btn-del').click(); } return; }
     if (k === 'g') { e.preventDefault(); (e.shiftKey ? ungroupSelection : groupSelection)(); return; }
     if (k === 'a') { e.preventDefault(); setSelection([...layers]); return; }
     if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); } else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }

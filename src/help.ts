@@ -104,6 +104,7 @@ export const HELP: HelpSection[] = [
     </ul>
     <h4>Autres actions (barre d'options)</h4>
     <ul>
+      <li><b>Copier / couper / coller</b> : ${k('Ctrl')}+${k('C')}, ${k('Ctrl')}+${k('X')}, ${k('Ctrl')}+${k('V')} sur la sélection (éléments ou groupes entiers, avec leurs réglages, effets, trajets et images clés). Chaque collage se décale un peu et devient la sélection ; on peut coller plusieurs fois, et aussi après avoir coupé. Une image copiée depuis une autre application est importée à la place.</li>
       <li>${ic('flip')} miroir, ${ic('front')} avancer ${k(']')}, ${ic('back')} reculer ${k('[')}, ${ic('dup')} dupliquer ${k('Ctrl')}+${k('D')}, ${ic('lock')} verrouiller ${k('Ctrl')}+${k('L')}, ${ic('trash')} supprimer ${k('Suppr')}.</li>
     </ul>` },
   {
@@ -224,6 +225,7 @@ export const HELP: HelpSection[] = [
       <tr><td>${k('Ctrl')}+${k('Z')} / ${k('Ctrl')}+${k('Y')}</td><td>Annuler / rétablir</td></tr>
       <tr><td>${k('Ctrl')}+${k('A')}</td><td>Tout sélectionner</td></tr>
       <tr><td>${k('Ctrl')}+${k('D')}</td><td>Dupliquer</td></tr>
+      <tr><td>${k('Ctrl')}+${k('C')} / ${k('Ctrl')}+${k('X')} / ${k('Ctrl')}+${k('V')}</td><td>Copier / couper / coller des éléments (ou coller une image)</td></tr>
       <tr><td>${k('Ctrl')}+${k('G')} / ${k('Ctrl')}+${k('Maj')}+${k('G')}</td><td>Grouper / dissocier</td></tr>
       <tr><td>${k('Ctrl')}+${k('L')}</td><td>Verrouiller la sélection</td></tr>
       <tr><td>${k(']')} / ${k('[')}</td><td>Avancer / reculer</td></tr>
@@ -240,7 +242,6 @@ export const HELP: HelpSection[] = [
       <tr><td>${k('Ctrl')}+${k('S')}</td><td>Enregistrer</td></tr>
       <tr><td>${k('Ctrl')}+${k('Maj')}+${k('S')}</td><td>Enregistrer sous…</td></tr>
       <tr><td>${k('Ctrl')}+${k('O')}</td><td>Ouvrir</td></tr>
-      <tr><td>${k('Ctrl')}+${k('V')}</td><td>Coller une image</td></tr>
       <tr><td>${k('F1')}</td><td>Cette aide</td></tr>
     </table>` },
 ];

@@ -90,7 +90,7 @@ Images clés : en pause (ou en déplaçant la tête de lecture), ◆ ajoute une 
 
 Boîte à outils à gauche (pictos, info-bulle = nom + raccourci), barre projet/historique/export en haut, barre d'options du calque dessous (contour, ombre, miroir, dupliquer, ordre, supprimer, tolérance, couleur de feuille, zoom), panneau de calques à droite (clic = sélectionner, glisser = réordonner), plan de travail en tapis de coupe.
 
-Raccourcis : Ctrl+G grouper · Ctrl+Maj+G dissocier · Ctrl+A tout sélectionner · V déplacer · A détourage auto · C détourage au clic · B fond uni · X ciseaux · R déchirer · T lettres · [ ] ordre · 0 tout voir · Ctrl+D dupliquer · Ctrl+Z/Y · Ctrl+S/O · Suppr.
+Raccourcis : Ctrl+G grouper · Ctrl+Maj+G dissocier · Ctrl+A tout sélectionner · V déplacer · A détourage auto · C détourage au clic · B fond uni · X ciseaux · R déchirer · T lettres · [ ] ordre · 0 tout voir · Ctrl+D dupliquer · Ctrl+C/X/V copier, couper, coller · Ctrl+Z/Y · Ctrl+S/O · Suppr.
 
 ## Commandes souris
 
