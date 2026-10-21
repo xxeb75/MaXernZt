@@ -364,3 +364,9 @@ input.num:focus { outline: none; border-color: var(--accent); background: #0f111
 #tour-nav { display: flex; align-items: center; gap: 6px; }
 #tour-nav .sp { flex: 1; }
 #tour-nav .go { height: 32px; padding: 0 16px; }
+
+/* logo */
+.logo { width: auto; height: 32px; display: flex; align-items: center; gap: 7px; padding: 0 8px 0 2px; margin-right: 10px; border-right: 1px solid var(--line); }
+.logo .mark { width: 26px; height: 26px; flex: none; filter: drop-shadow(0 1px 1px rgba(0,0,0,.45)); }
+.logo .wm { font-size: 14px; font-weight: 700; letter-spacing: .01em; color: var(--text); white-space: nowrap; }
+.logo .wm b { color: var(--accent); font-weight: 800; }
