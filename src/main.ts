@@ -1892,7 +1892,9 @@ async function setAudio(bytes: ArrayBuffer, name: string, mime: string, o: { vol
   const buf = await decodeAudio(bytes), sens = o.sens ?? 0.5;
   audioTrack = { id: ++audioSeq, name, mime, bytes, buf, an: analyse(buf, sens), wave: waveform(buf, 6000), vol: o.vol ?? 0.9, muted: !!o.muted, sens, src: o.src ?? 'kicks' };
   if (!o.keepDuration) tlDurManual = Math.max(1, Math.round(buf.duration * 10) / 10);   // la timeline prend la longueur de la musique (modifiable)
-  tlSig = ''; dirty = true; rev++; syncAudioUI();
+  tlSig = ''; syncAudioUI();
+  commit();   // la durée prise à la musique entre dans l'historique : un « annuler » ultérieur ne la fait pas disparaître
+  dirty = true; rev++;
   return audioTrack;
 }
 function clearAudio() { stopPlay(); audioTrack = null; tlSig = ''; syncAudioUI(); }
@@ -2416,7 +2418,8 @@ addEventListener('pointerdown', e => {
 // danse automatique : des effets tirés au hasard sur les temps de la musique
 const DANCE_FX = ['bounce', 'jump', 'pulse', 'shake', 'swing', 'blink', 'spin'];
 const danceOn = new Set(DANCE_FX);
-let danceSeed = 1, danceHi = -1, danceTarget: 'sel' | 'all' = 'all';
+let danceSeed = 1, danceTarget: 'sel' | 'all' = 'all';
+let danceUndo: { hi: number; tls: [Node, unknown][] } | null = null;   // courbes des éléments avant la dernière danse
 const rngFrom = (seed: number) => () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 for (const id of DANCE_FX) {
   const fx = FX.find(f => f.id === id)!, b = document.createElement('button');
@@ -2431,7 +2434,7 @@ $<HTMLInputElement>('dance-int').dispatchEvent(new Event('input'));
 function danceGenerate() {
   const A = audioTrack; if (!A) { status("Charge d'abord une musique."); return; }
   stopPlay();
-  if (danceHi === hi) undo();   // « autre tirage » : on retire d'abord ce que la dernière danse avait posé
+  if (danceUndo && danceUndo.hi === hi) for (const [n, t] of danceUndo.tls) setTl(n, t as TL | undefined);   // « autre tirage » : on retire d'abord ce que la dernière danse avait posé
   const D = tlDuration(), times = beatsOf(A).filter(t => t < D - 0.15);
   if (!times.length) { status('Aucun temps détecté : augmente la sensibilité dans les réglages de la musique.'); return; }
   const rnd = rngFrom(danceSeed++ * 7919 + 13), inten = +$<HTMLInputElement>('dance-int').value;
@@ -2439,6 +2442,7 @@ function danceGenerate() {
   const pool: Node[] = danceTarget === 'sel' && sel.length ? sel : root.children.filter(n => !isLocked(n));
   if (!pool.length) { status('Rien à animer : ajoute des éléments sur la feuille.'); return; }
   const fxs = DANCE_FX.filter(id => danceOn.has(id)).map(id => FX.find(f => f.id === id)!);
+  const backup: [Node, unknown][] = pool.map(n => [n, tlOf(n)]);
   const keep = 0.3 + 0.07 * inten, busy = new Map<Node, number>(), bag: Node[] = [];
   let count = 0; const used = new Set<Node>();
   for (let i = 0; i < times.length; i++) {
@@ -2454,7 +2458,7 @@ function danceGenerate() {
       applyFx(n, fx, t, Math.min(d, D - t)); busy.set(n, t + d); used.add(n); count++;
     }
   }
-  tlSig = ''; commit(); danceHi = hi;
+  tlSig = ''; commit(); danceUndo = { hi, tls: backup };
   status(`Danse : ${count} effets posés sur ${used.size} élément${used.size > 1 ? 's' : ''}, calés sur ${A.src === 'kicks' ? 'la grosse caisse' : A.src === 'beats' ? 'les temps' : 'les attaques'}. Clique le dé pour un autre tirage.`);
   startPlay();   // et hop : ça danse
 }

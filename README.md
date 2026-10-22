@@ -117,7 +117,7 @@ Tauri (installeur Windows), ONNX natif + DirectML, MobileSAM (clic pour choisir 
 
 ## Installateur Windows
 
-`npx tauri build` produit, en plus de l'exe, un installateur NSIS en français : `src-tauri/target/release/bundle/nsis/MaXernZt_0.18.0_x64-setup.exe`. Installation **par utilisateur** (sans droits administrateur) dans `%LocalAppData%\MaXernZt`, raccourcis dans le menu Démarrer, désinstallation depuis les paramètres Windows. Les modèles d'IA sont embarqués (≈ 43 Mo). Pour un simple exe sans installateur : `npx tauri build --no-bundle`. La version se règle dans `package.json`, `src-tauri/Cargo.toml` et `src-tauri/tauri.conf.json` (format x.y.z : 0.18.0 s'affiche « 0.18 » dans l'aide, section Crédits).
+`npx tauri build` produit, en plus de l'exe, un installateur NSIS en français : `src-tauri/target/release/bundle/nsis/MaXernZt_0.18.1_x64-setup.exe`. Installation **par utilisateur** (sans droits administrateur) dans `%LocalAppData%\MaXernZt`, raccourcis dans le menu Démarrer, désinstallation depuis les paramètres Windows. Les modèles d'IA sont embarqués (≈ 43 Mo). Pour un simple exe sans installateur : `npx tauri build --no-bundle`. La version se règle dans `package.json`, `src-tauri/Cargo.toml` et `src-tauri/tauri.conf.json` (format x.y.z : 0.18.0 s'affiche « 0.18 » dans l'aide, section Crédits).
 
 ## Crédits
 
