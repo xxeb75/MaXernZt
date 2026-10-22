@@ -209,7 +209,8 @@ export const HELP: HelpSection[] = [
       <li><b>Repères</b> : grosse caisse, temps (grille du tempo) ou toutes les attaques.</li>
       <li><b>Cible</b> : tous les éléments de la feuille (hors éléments verrouillés), ou seulement la sélection. Les éléments réagissent chacun leur tour, sans se chevaucher.</li>
       <li><b>Effets possibles</b> : rebondit, saute, battement, tremble, balancier, clignote, tour sur soi-même. Clique une icône pour la retirer ou la remettre.</li>
-      <li><b>Intensité</b> (1 à 10) : part des coups utilisée et nombre d'éléments qui réagissent à chaque coup.</li>
+      <li><b>Intensité</b> (1 à 10) : part des éléments qui réagissent à chaque coup (à 10, tous bougent ensemble) et part des coups utilisée.</li>
+      <li><b>Amplitude</b> (1 à 10) : ampleur des mouvements. Elle est modulée par la force du coup : un gros coup de grosse caisse fait bouger plus fort qu'un coup léger.</li>
       <li><b>Danser !</b> pose les effets ; recliquer donne <b>un autre tirage</b> en remplaçant le précédent. <kbd>Ctrl</kbd>+<kbd>Z</kbd> annule toute la danse d'un coup.</li>
     </ul>
     <p>Ce sont des images clés ordinaires : tu peux ensuite les déplacer, les modifier ou les supprimer dans la timeline, ou ajouter tes propres effets par-dessus.</p>` },

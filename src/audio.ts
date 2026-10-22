@@ -11,6 +11,15 @@ export interface Analysis {
   beats: number[];   // grille régulière de temps (s)
   kicks: number[];   // pics de grosse caisse (graves)
   hits: number[];    // toutes les attaques marquées (graves + aigus)
+  flux: Float32Array; hop: number; ref: number;   // courbe d'attaque (pour mesurer la force d'un coup)
+}
+
+/** Force d'une attaque à l'instant t, de 0 (faible) à 1 (aussi fort que les plus gros coups du morceau). */
+export function strengthAt(a: Analysis, t: number): number {
+  if (!a.flux.length || a.ref <= 0) return 0.5;
+  const c = Math.round(t / a.hop); let m = 0;
+  for (let i = Math.max(0, c - 3); i <= Math.min(a.flux.length - 1, c + 5); i++) if (a.flux[i] > m) m = a.flux[i];
+  return Math.min(1, m / a.ref);
 }
 
 /** Pics d'une courbe d'attaque : au-dessus de la moyenne locale (± 1 s) + k écarts-types, espacés d'au moins `minGap` s. */
@@ -35,7 +44,7 @@ function pickPeaks(f: Float32Array, hop: number, k: number, minGap: number): num
 export function analyse(buf: AudioBuffer, sens = 0.5): Analysis {
   const sr = buf.sampleRate, n = buf.length, ch = buf.numberOfChannels;
   const hop = Math.max(64, Math.round(sr * 0.0116)), hopSec = hop / sr, frames = Math.floor(n / hop);
-  if (frames < 8) return { bpm: 0, beats: [], kicks: [], hits: [] };
+  if (frames < 8) return { bpm: 0, beats: [], kicks: [], hits: [], flux: new Float32Array(0), hop: hopSec, ref: 0 };
   const mono = new Float32Array(n);
   for (let c = 0; c < ch; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) mono[i] += d[i] / ch; }
   const aLow = 1 - Math.exp((-2 * Math.PI * 150) / sr), aHi = 1 - Math.exp((-2 * Math.PI * 2500) / sr);
@@ -73,7 +82,8 @@ export function analyse(buf: AudioBuffer, sens = 0.5): Analysis {
     if (s > bestSum) { bestSum = s; bestOff = o * hopSec; }
   }
   const beats: number[] = []; for (let t = bestOff; t < buf.duration; t += P) beats.push(t);
-  return { bpm: Math.round(bpm * 10) / 10, beats, kicks, hits };
+  const sorted = Float32Array.from(fAll).sort(), ref = sorted[Math.floor(sorted.length * 0.97)] || 1;   // 97e centile : les plus gros coups
+  return { bpm: Math.round(bpm * 10) / 10, beats, kicks, hits, flux: fAll, hop: hopSec, ref };
 }
 
 /** Enveloppe pour dessiner la forme d'onde : `n` valeurs entre 0 et 1 (crête de chaque tranche). */

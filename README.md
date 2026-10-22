@@ -60,7 +60,7 @@ Panneau en bas, que l'on étire vers le haut en tirant sa poignée (double-clic 
 
 - **Piste son** (icône note de la timeline, ou glisser un MP3 / WAV / OGG / M4A / FLAC sur la fenêtre) : une musique par projet, enregistrée **dans** le projet (40 Mo maximum), lue avec l'animation, affichée dans la timeline avec sa forme d'onde. La durée de la timeline prend celle de la musique.
 - **Analyse du rythme** (`src/audio.ts`, traitement du signal, aucun modèle d'IA, tout en local) : séparation graves / aigus, courbes d'attaque, pics avec seuil adaptatif, tempo par autocorrélation, grille de temps calée sur les attaques. Trois jeux de repères : grosse caisse, temps, toutes les attaques ; réglage de sensibilité.
-- **Danse automatique** (icône dé + note) : pose des effets tirés au hasard (rebondit, saute, battement, tremble, balancier, clignote, tour sur soi-même) sur les repères choisis, pour tous les éléments ou la sélection, selon une intensité ; « Danser ! » relance un autre tirage en remplaçant le précédent ; Ctrl+Z annule tout d'un coup.
+- **Danse automatique** (icône dé + note) : pose des effets tirés au hasard (rebondit, saute, battement, tremble, balancier, clignote, tour sur soi-même) sur les repères choisis, pour tous les éléments ou la sélection, selon une intensité et une amplitude (modulée par la force de chaque coup) ; « Danser ! » relance un autre tirage en remplaçant le précédent ; Ctrl+Z annule tout d'un coup.
 - **Export vidéo avec le son** : AAC en MP4 (ou Opus en MP4 / WebM selon le navigateur) ; si aucun codec audio n'est disponible, l'export le signale et la vidéo est muette.
 
 ## Aimantation, verrouillage, effets
@@ -117,7 +117,7 @@ Tauri (installeur Windows), ONNX natif + DirectML, MobileSAM (clic pour choisir 
 
 ## Installateur Windows
 
-`npx tauri build` produit, en plus de l'exe, un installateur NSIS en français : `src-tauri/target/release/bundle/nsis/MaXernZt_0.18.1_x64-setup.exe`. Installation **par utilisateur** (sans droits administrateur) dans `%LocalAppData%\MaXernZt`, raccourcis dans le menu Démarrer, désinstallation depuis les paramètres Windows. Les modèles d'IA sont embarqués (≈ 43 Mo). Pour un simple exe sans installateur : `npx tauri build --no-bundle`. La version se règle dans `package.json`, `src-tauri/Cargo.toml` et `src-tauri/tauri.conf.json` (format x.y.z : 0.18.0 s'affiche « 0.18 » dans l'aide, section Crédits).
+`npx tauri build` produit, en plus de l'exe, un installateur NSIS en français : `src-tauri/target/release/bundle/nsis/MaXernZt_0.18.2_x64-setup.exe`. Installation **par utilisateur** (sans droits administrateur) dans `%LocalAppData%\MaXernZt`, raccourcis dans le menu Démarrer, désinstallation depuis les paramètres Windows. Les modèles d'IA sont embarqués (≈ 43 Mo). Pour un simple exe sans installateur : `npx tauri build --no-bundle`. La version se règle dans `package.json`, `src-tauri/Cargo.toml` et `src-tauri/tauri.conf.json` (format x.y.z : 0.18.0 s'affiche « 0.18 » dans l'aide, section Crédits).
 
 ## Crédits
 

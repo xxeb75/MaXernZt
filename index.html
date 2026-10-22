@@ -332,7 +332,8 @@
     <button class="chip txt" data-dtarget="sel" data-tip="Seulement la sélection (sinon tout)" data-pos="top">Sélection</button>
   </div>
   <div id="dance-fx" data-tip="Effets possibles : clique pour en retirer ou en remettre" data-pos="top"></div>
-  <label class="ctl" data-tip="Intensité : nombre de coups utilisés et d'éléments qui réagissent à chacun" data-pos="top"><svg class="ic"><use href="#i-fx"/></svg><input id="dance-int" type="range" min="1" max="10" value="5"><output id="v-dance-int"></output></label>
+  <label class="ctl" data-tip="Intensité : part des éléments qui réagissent à chaque coup et part des coups utilisés" data-pos="top"><svg class="ic"><use href="#i-dance"/></svg><input id="dance-int" type="range" min="1" max="10" value="7"><output id="v-dance-int"></output></label>
+  <label class="ctl" data-tip="Amplitude des mouvements (les coups forts bougent plus que les faibles)" data-pos="top"><svg class="ic"><use href="#i-fit"/></svg><input id="dance-amp" type="range" min="1" max="10" value="6"><output id="v-dance-amp"></output></label>
   <button id="dance-go" class="go"><svg class="ic"><use href="#i-dance"/></svg>Danser !</button>
 </div>
 <input id="file-audio" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus" hidden>

@@ -6,7 +6,7 @@ import { ACC_KINDS, ACC_COLORS, ACC_DEFAULTS, type AccCat, type AccKind, type Ac
 import { encodeVideo, videoSupported } from './video';
 import { samAvailable, segment, forget, type SamPoint } from './sam';
 import './fonts.css';
-import { decodeAudio, analyse, waveform, Player, type Analysis } from './audio';
+import { decodeAudio, analyse, waveform, strengthAt, Player, type Analysis } from './audio';
 import { makeZip, type ZipEntry } from './zip';
 import { HELP } from './help';
 import { type PaperKind, PAPERS, renderPaperOverlay } from './paper';
@@ -2316,7 +2316,7 @@ $('btn-knext').onclick = () => jumpKey(1);
 // ---- effets prêts à l'emploi : des images clés générées à partir de la tête de lecture, que l'on peut ensuite retoucher une à une
 type FxTrack = { t: number; v: number; w?: number; e?: KEase }[];
 interface FxBase { x: number; y: number; rot: number; scale: number }
-interface Fx { id: string; name: string; gen: (b: FxBase, d: number) => Partial<Record<PropId, FxTrack>> }
+interface Fx { id: string; name: string; gen: (b: FxBase, d: number, k: number) => Partial<Record<PropId, FxTrack>> }   // k : amplitude (1 = normale)
 const pop = (extra: FxTrack = []): FxTrack => [{ t: 0, v: 0, e: 'hold' }, { t: 0.05, v: 1, e: 'hold' }, ...extra];
 const FX: Fx[] = [
   { id: 'fadein', name: 'Apparition en fondu', gen: (b, d) => ({ vis: [{ t: 0, v: 0, e: 'smooth' }, { t: d, v: 1, e: 'hold' }] }) },
@@ -2325,17 +2325,17 @@ const FX: Fx[] = [
   { id: 'popout', name: 'S\u2019évanouit (zoom arrière)', gen: (b, d) => ({ scale: [{ t: 0, v: b.scale }, { t: 0.35 * d, v: b.scale * 1.15 }, { t: d, v: 0.01 }], vis: [{ t: 0, v: 1, e: 'hold' }, { t: d, v: 0, e: 'hold' }] }) },
   { id: 'spinin', name: 'Arrive en tournant', gen: (b, d) => ({ vis: pop(), rot: [{ t: 0, v: b.rot - 360 }, { t: d, v: b.rot }], scale: [{ t: 0, v: 0.01 }, { t: d, v: b.scale }] }) },
   { id: 'drop', name: 'Chute et rebonds', gen: (b, d) => ({ pos: [{ t: 0, v: b.x, w: b.y - Math.max(PH, 900) }, { t: 0.55 * d, v: b.x, w: b.y }, { t: 0.7 * d, v: b.x, w: b.y - 70 }, { t: 0.85 * d, v: b.x, w: b.y }, { t: 0.93 * d, v: b.x, w: b.y - 18 }, { t: d, v: b.x, w: b.y }] }) },
-  { id: 'bounce', name: 'Rebondit', gen: (b, d) => ({ pos: [0, 0.2, 0.4, 0.55, 0.7, 0.8, 1].map((f, i) => ({ t: f * d, v: b.x, w: b.y - [0, 70, 0, 34, 0, 12, 0][i] })) }) },
-  { id: 'pulse', name: 'Battement (pulsation)', gen: (b, d) => ({ scale: [{ t: 0, v: b.scale }, { t: 0.15 * d, v: b.scale * 1.25 }, { t: 0.3 * d, v: b.scale }, { t: 0.45 * d, v: b.scale * 1.18 }, { t: d, v: b.scale }] }) },
-  { id: 'shake', name: 'Tremble', gen: (b, d) => ({ pos: [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => ({ t: (i / 8) * d, v: b.x + (i === 0 || i === 8 ? 0 : (i % 2 ? 1 : -1) * 16 * (1 - i / 9)), w: b.y, e: 'linear' as KEase })) }) },
-  { id: 'swing', name: 'Balancier', gen: (b, d) => ({ rot: [{ t: 0, v: b.rot }, { t: 0.25 * d, v: b.rot + 15 }, { t: 0.75 * d, v: b.rot - 15 }, { t: d, v: b.rot }] }) },
+  { id: 'bounce', name: 'Rebondit', gen: (b, d, k) => ({ pos: [0, 0.2, 0.4, 0.55, 0.7, 0.8, 1].map((f, i) => ({ t: f * d, v: b.x, w: b.y - [0, 70, 0, 34, 0, 12, 0][i] * k })) }) },
+  { id: 'pulse', name: 'Battement (pulsation)', gen: (b, d, k) => ({ scale: [{ t: 0, v: b.scale }, { t: 0.15 * d, v: b.scale * (1 + 0.25 * k) }, { t: 0.3 * d, v: b.scale }, { t: 0.45 * d, v: b.scale * (1 + 0.18 * k) }, { t: d, v: b.scale }] }) },
+  { id: 'shake', name: 'Tremble', gen: (b, d, k) => ({ pos: [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => ({ t: (i / 8) * d, v: b.x + (i === 0 || i === 8 ? 0 : (i % 2 ? 1 : -1) * 16 * k * (1 - i / 9)), w: b.y, e: 'linear' as KEase })) }) },
+  { id: 'swing', name: 'Balancier', gen: (b, d, k) => ({ rot: [{ t: 0, v: b.rot }, { t: 0.25 * d, v: b.rot + 15 * k }, { t: 0.75 * d, v: b.rot - 15 * k }, { t: d, v: b.rot }] }) },
   { id: 'spin', name: 'Tour sur soi-même', gen: (b, d) => ({ rot: [{ t: 0, v: b.rot }, { t: d, v: b.rot + 360 }] }) },
-  { id: 'jump', name: 'Saute', gen: (b, d) => ({ pos: [{ t: 0, v: b.x, w: b.y }, { t: 0.35 * d, v: b.x, w: b.y - 110 }, { t: 0.7 * d, v: b.x, w: b.y }, { t: 0.85 * d, v: b.x, w: b.y - 18 }, { t: d, v: b.x, w: b.y }], scale: [{ t: 0, v: b.scale }, { t: 0.35 * d, v: b.scale * 1.08 }, { t: 0.7 * d, v: b.scale * 0.94 }, { t: d, v: b.scale }] }) },
+  { id: 'jump', name: 'Saute', gen: (b, d, k) => ({ pos: [{ t: 0, v: b.x, w: b.y }, { t: 0.3 * d, v: b.x, w: b.y - 110 * k }, { t: 0.65 * d, v: b.x, w: b.y }, { t: 0.82 * d, v: b.x, w: b.y - 18 * k }, { t: d, v: b.x, w: b.y }], scale: [{ t: 0, v: b.scale }, { t: 0.3 * d, v: b.scale * (1 + 0.08 * k) }, { t: 0.65 * d, v: b.scale * (1 - 0.06 * k) }, { t: d, v: b.scale }] }) },
   { id: 'blink', name: 'Clignote', gen: (b, d) => ({ vis: [1, 0, 1, 0, 1, 0, 1].map((v, i) => ({ t: (i / 6) * d, v, e: 'hold' as KEase })) }) },
 ];
 /** Pose les images clés d'un effet pour `n`, à partir de t0 : remplace celles de la plage couverte, garde l'état d'avant. */
-function applyFx(n: Node, fx: Fx, t0: number, d: number) {
-  const tl0 = tlOf(n), v0 = evalTL(tl0, t0), tracks = fx.gen({ x: v0.x, y: v0.y, rot: v0.rot, scale: v0.scale }, d);
+function applyFx(n: Node, fx: Fx, t0: number, d: number, k = 1) {
+  const tl0 = tlOf(n), v0 = evalTL(tl0, t0), tracks = fx.gen({ x: v0.x, y: v0.y, rot: v0.rot, scale: v0.scale }, d, k);
   const tl: TL = { ...(tl0 ?? {}) };
   for (const p of PROPS) {
     const track = tracks[p.id]; if (!track) continue;
@@ -2431,6 +2431,8 @@ dancePop.querySelectorAll<HTMLElement>('[data-bsrc]').forEach(b => b.onclick = (
 dancePop.querySelectorAll<HTMLElement>('[data-dtarget]').forEach(b => b.onclick = () => { danceTarget = b.dataset.dtarget as 'sel' | 'all'; dancePop.querySelectorAll<HTMLElement>('[data-dtarget]').forEach(x => x.classList.toggle('on', x === b)); });
 $<HTMLInputElement>('dance-int').oninput = e => { const r = e.target as HTMLInputElement; r.style.setProperty('--p', ((+r.value - 1) / 9) * 100 + '%'); $('v-dance-int').textContent = r.value + ' / 10'; };
 $<HTMLInputElement>('dance-int').dispatchEvent(new Event('input'));
+$<HTMLInputElement>('dance-amp').oninput = e => { const r = e.target as HTMLInputElement; r.style.setProperty('--p', ((+r.value - 1) / 9) * 100 + '%'); $('v-dance-amp').textContent = r.value + ' / 10'; };
+$<HTMLInputElement>('dance-amp').dispatchEvent(new Event('input'));
 function danceGenerate() {
   const A = audioTrack; if (!A) { status("Charge d'abord une musique."); return; }
   stopPlay();
@@ -2443,24 +2445,30 @@ function danceGenerate() {
   if (!pool.length) { status('Rien à animer : ajoute des éléments sur la feuille.'); return; }
   const fxs = DANCE_FX.filter(id => danceOn.has(id)).map(id => FX.find(f => f.id === id)!);
   const backup: [Node, unknown][] = pool.map(n => [n, tlOf(n)]);
-  const keep = 0.3 + 0.07 * inten, busy = new Map<Node, number>(), bag: Node[] = [];
-  let count = 0; const used = new Set<Node>();
+  const amp = +$<HTMLInputElement>('dance-amp').value, kBase = 0.45 + 0.3 * amp;   // amplitude : de ×0,75 à ×3,45
+  const keep = 0.6 + 0.04 * inten, share = 0.12 + 0.88 * Math.pow((inten - 1) / 9, 1.2);   // part des coups utilisée ; part des éléments qui réagissent à chaque coup
+  const busy = new Map<Node, number>(), bag: Node[] = [];
+  let count = 0, hitsUsed = 0; const used = new Set<Node>();
   for (let i = 0; i < times.length; i++) {
     if (rnd() > keep) continue;
-    const t = times[i], next = times[i + 1] ?? t + 0.6, gap = next - t;
-    const want = Math.min(pool.length, 1 + Math.floor((rnd() * inten) / 2.6));
+    const t = times[i], next = times[i + 1] ?? t + 0.6, gap = next - t, s = strengthAt(A.an, t), kk = kBase * (0.6 + 0.8 * s);   // un coup fort fait réagir plus fort
+    const want = Math.max(1, Math.round(pool.length * share)), main = fxs[Math.floor(rnd() * fxs.length)];   // un effet commun : les éléments bougent ensemble, ça se lit comme une réaction au son
+    const d = Math.min(D - t, Math.max(0.28, Math.min(0.8, gap * 0.92)));
+    let did = false;
     for (let k = 0; k < want; k++) {
       if (!bag.length) bag.push(...pool.slice().sort(() => rnd() - 0.5));   // « sac » mélangé : chacun son tour avant de recommencer
       let n: Node | undefined, tries = 0;
       while (bag.length && tries++ < 6) { const c = bag.pop()!; if ((busy.get(c) ?? 0) <= t) { n = c; break; } }
       if (!n) continue;
-      const d = Math.max(0.3, Math.min(1.1, gap * (0.8 + rnd() * 0.25)), 0.3), fx = fxs[Math.floor(rnd() * fxs.length)];
-      applyFx(n, fx, t, Math.min(d, D - t)); busy.set(n, t + d); used.add(n); count++;
+      applyFx(n, rnd() < 0.75 ? main : fxs[Math.floor(rnd() * fxs.length)], t, d, kk); busy.set(n, t + d * 0.9); used.add(n); count++; did = true;
     }
+    if (did) hitsUsed++;
   }
   tlSig = ''; commit(); danceUndo = { hi, tls: backup };
-  status(`Danse : ${count} effets posés sur ${used.size} élément${used.size > 1 ? 's' : ''}, calés sur ${A.src === 'kicks' ? 'la grosse caisse' : A.src === 'beats' ? 'les temps' : 'les attaques'}. Clique le dé pour un autre tirage.`);
   startPlay();   // et hop : ça danse
+  const what = A.src === 'kicks' ? 'la grosse caisse' : A.src === 'beats' ? 'les temps' : 'les attaques';
+  const msg = `${count} effets sur ${used.size} élément${used.size > 1 ? 's' : ''}, ${hitsUsed} coups utilisés sur ${times.length} (${what}). Reclique « Danser ! » pour un autre tirage.`;
+  status('Danse : ' + msg); toast('Danse posée', msg, 'ok');
 }
 $('btn-dance').onclick = e => {
   e.stopPropagation();
