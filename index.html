@@ -89,6 +89,12 @@
   <symbol id="i-bankadd" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M12 8.5v7M8.5 12h7"/></symbol>
   <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M9.4 9.4a2.7 2.7 0 1 1 3.9 2.4c-.9.5-1.3 1-1.3 2"/><circle cx="12" cy="16.8" r=".9" fill="currentColor"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></symbol>
+  <symbol id="i-dance" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="11" height="11" rx="2.2"/><circle cx="7" cy="7" r=".9" fill="currentColor"/><circle cx="11" cy="11" r=".9" fill="currentColor"/><path d="M15.5 21V11l5-1v8"/><circle cx="13.5" cy="21" r="2"/><circle cx="18.5" cy="19" r="2"/></symbol>
+  <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></symbol>
+  <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></symbol>
+  <symbol id="i-fx-spin" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/></symbol>
+  <symbol id="i-fx-jump" viewBox="0 0 24 24"><circle cx="12" cy="6.5" r="2.3" fill="currentColor"/><path d="M5 20.5h14M8 20.5c0-6 8-6 8 0"/><path d="M12 10v3" opacity=".6"/></symbol>
   <symbol id="i-key" viewBox="0 0 24 24"><path d="M12 3.8l7 8.2-7 8.2-7-8.2z"/><path d="M12 9v6M9 12h6"/></symbol>
   <symbol id="i-hold" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M10 8.5v7M14 8.5v7"/></symbol>
   <symbol id="i-spin" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.4-5.5"/><path d="M19.8 4v4.6h-4.6"/></symbol>
@@ -303,6 +309,33 @@
     </div>
   </div>
 </div>
+<div id="audpop">
+  <div class="aud-title"><svg class="ic"><use href="#i-note"/></svg><div><b id="aud-name"></b><div id="aud-info"></div></div></div>
+  <label class="ctl" data-tip="Volume" data-pos="top"><svg class="ic"><use href="#i-sound"/></svg><input id="aud-vol" type="range" min="0" max="100" value="90"><output id="v-aud-vol"></output></label>
+  <label class="ctl" data-tip="Sensibilité de la détection : plus haut = plus de pics retenus" data-pos="top"><svg class="ic"><use href="#i-dance"/></svg><input id="aud-sens" type="range" min="0" max="100" value="50"><output id="v-aud-sens"></output></label>
+  <div class="aud-btns">
+    <button id="aud-mute" class="ib" data-tip="Couper le son (lecture et export)" data-pos="top"><svg class="ic"><use href="#i-sound"/></svg></button>
+    <button id="aud-replace" class="ib" data-tip="Choisir une autre musique" data-pos="top"><svg class="ic"><use href="#i-import"/></svg></button>
+    <span class="sp"></span>
+    <button id="aud-remove" class="ib danger" data-tip="Retirer la musique du projet" data-pos="top"><svg class="ic"><use href="#i-trash"/></svg></button>
+  </div>
+</div>
+<div id="dancepop">
+  <div class="dp-title">Danse automatique</div>
+  <div class="chips dp-row" data-tip="Quels repères de la musique déclenchent les effets" data-pos="top">
+    <button class="chip txt on" data-bsrc="kicks" data-tip="Les coups de grosse caisse" data-pos="top">Grosse caisse</button>
+    <button class="chip txt" data-bsrc="beats" data-tip="Une grille régulière au tempo détecté" data-pos="top">Temps</button>
+    <button class="chip txt" data-bsrc="hits" data-tip="Toutes les attaques (graves et aigus)" data-pos="top">Attaques</button>
+  </div>
+  <div class="chips dp-row">
+    <button class="chip txt on" data-dtarget="all" data-tip="Tous les éléments de la feuille" data-pos="top">Tout</button>
+    <button class="chip txt" data-dtarget="sel" data-tip="Seulement la sélection (sinon tout)" data-pos="top">Sélection</button>
+  </div>
+  <div id="dance-fx" data-tip="Effets possibles : clique pour en retirer ou en remettre" data-pos="top"></div>
+  <label class="ctl" data-tip="Intensité : nombre de coups utilisés et d'éléments qui réagissent à chacun" data-pos="top"><svg class="ic"><use href="#i-fx"/></svg><input id="dance-int" type="range" min="1" max="10" value="5"><output id="v-dance-int"></output></label>
+  <button id="dance-go" class="go"><svg class="ic"><use href="#i-dance"/></svg>Danser !</button>
+</div>
+<input id="file-audio" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus" hidden>
 <div id="fxpop">
   <div id="fx-grid"></div>
   <label class="ctl" data-tip="Durée de l'effet" data-pos="top"><svg class="ic"><use href="#i-clock"/></svg><input id="fx-dur" type="range" min="0.3" max="3" step="0.1" value="1"><output id="v-fx-dur"></output></label>
@@ -318,6 +351,8 @@
     <button id="btn-knext" class="ib" data-tip="Image clé suivante (Alt+→)" data-pos="top"><svg class="ic"><use href="#i-knext"/></svg></button>
     <button id="btn-rec" class="ib rec" data-tip="Enregistrement automatique : en pause, déplace, tourne ou agrandis l'élément pour créer des images clés" data-pos="top"><svg class="ic"><use href="#i-rec"/></svg></button>
     <button id="btn-fx" class="ib fxbtn" data-tip="Effets prêts à l'emploi : posent des images clés à la tête de lecture" data-pos="top"><svg class="ic"><use href="#i-fx"/></svg></button>
+    <button id="btn-audio" class="ib" data-tip="Musique : charger un fichier son (MP3, WAV…), forme d'onde et temps dans la timeline" data-pos="top"><svg class="ic"><use href="#i-note"/></svg></button>
+    <button id="btn-dance" class="ib" data-tip="Danse automatique : des effets au hasard calés sur les temps de la musique" data-pos="top" disabled><svg class="ic"><use href="#i-dance"/></svg></button>
     <button id="btn-tlkey" class="ib keyadd" data-tip="Image clé de pose (position, rotation, taille) à cet instant" data-pos="top"><svg class="ic"><use href="#i-key"/></svg></button>
     <div id="kf-ed" data-prop="pos">
       <label class="ctl" data-tip="Instant de l'image clé" data-pos="top"><svg class="ic"><use href="#i-clock"/></svg><input id="kf-t" class="num" type="text" inputmode="decimal" spellcheck="false" autocomplete="off" value="0 s"></label>

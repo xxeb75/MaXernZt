@@ -29,7 +29,7 @@ export const HELP: HelpSection[] = [
     <ul>
       <li>${ic('import')} ouvre un sélecteur ; on peut aussi <b>glisser-déposer</b> des fichiers sur la fenêtre ou <b>coller</b> une image avec ${k('Ctrl')}+${k('V')}.</li>
       <li>Les images sont réduites à 1 200 px de côté maximum et arrivent au centre de la feuille.</li>
-      <li>Un fichier <b>.maxernzt</b> glissé sur la fenêtre ouvre le projet.</li>
+      <li>Un fichier <b>.maxernzt</b> glissé sur la fenêtre ouvre le projet ; un fichier son (MP3, WAV…) devient la musique du projet.</li>
       <li>Sur le site, les <b>exemples</b> s'ouvrent directement dans l'application ; ce sont des projets <b>.maxernzt</b> comme les tiens (enregistre-les sous un autre nom avant de les modifier).</li>
       <li>Une image déjà <b>détourée</b> (PNG transparent) est prête à l'emploi ; sinon utilise les outils de détourage.</li>
     </ul>` },
@@ -174,7 +174,7 @@ export const HELP: HelpSection[] = [
     <ul>
       <li>${ic('rec')} <b>enregistrement automatique</b> : place la tête de lecture, puis <b>déplace, tourne ou agrandis</b> l'élément sélectionné : une image clé se crée seule à cet instant.</li>
       <li>${ic('key')} <b>image clé de pose</b> : fixe position, rotation et taille à cet instant. <b>Double-clic</b> sur une piste : image clé à la valeur actuelle.</li>
-      <li>${ic('fx')} <b>effets prêts à l'emploi</b> : apparition ou disparition en fondu, surgit, s'évanouit, arrive en tournant, chute et rebonds, rebondit, battement, tremble, balancier, clignote. Choisis la <b>durée</b> avec le curseur ; l'effet pose ses images clés à partir de la tête de lecture, pour toute la sélection.</li>
+      <li>${ic('fx')} <b>effets prêts à l'emploi</b> : apparition ou disparition en fondu, surgit, s'évanouit, arrive en tournant, chute et rebonds, rebondit, battement, tremble, balancier, clignote, tour sur soi-même, saute. Choisis la <b>durée</b> avec le curseur ; l'effet pose ses images clés à partir de la tête de lecture, pour toute la sélection.</li>
     </ul>
     <h4>Naviguer et modifier</h4>
     <ul>
@@ -189,12 +189,37 @@ export const HELP: HelpSection[] = [
       <li>La <b>durée</b> est automatique (au moins 5 s, jusqu'à la dernière clé ou au plus long trajet) ou saisie à la main.</li>
     </ul>` },
   {
+    id: 'music', title: 'Musique et danse automatique', icon: 'note', html: `
+    <p>Un projet peut avoir <b>une musique</b>. Elle se lit avec l'animation, apparaît dans la timeline avec sa forme d'onde et ses repères, et peut servir à faire <b>danser le collage</b> sur le rythme.</p>
+    <h4>${ic('note')} Charger une musique</h4>
+    <ul>
+      <li>Clique l'icône note de la timeline et choisis un fichier (MP3, WAV, OGG, M4A, FLAC…), ou glisse-le sur la fenêtre. Au-delà de 40 Mo, il est refusé : le son est enregistré <b>dans le projet</b>.</li>
+      <li>La durée de la timeline prend celle de la musique (tu peux la modifier ensuite).</li>
+      <li>La musique se lit avec ▶ / <kbd>Espace</kbd> et se met en pause avec l'animation. Dans l'export vidéo, elle est ajoutée à la vidéo (AAC en MP4, Opus en WebM), sauf si elle est coupée.</li>
+    </ul>
+    <h4>Analyse du rythme</h4>
+    <p>Dès le chargement, l'application analyse le son (traitement du signal, sans envoi sur internet) : elle sépare les <b>graves</b> (grosse caisse) des <b>aigus</b> (caisse claire, charleston), repère les <b>pics</b>, estime le <b>tempo</b> en battements par minute et cale une <b>grille de temps</b> régulière. Les repères jaunes de la piste montrent les temps retenus ; l'icône note rouvre les réglages :</p>
+    <ul>
+      <li><b>Volume</b> et <b>coupure</b> du son (lecture et export) ; <b>sensibilité</b> de la détection (plus haut = plus de pics retenus) ; choisir une autre musique ; retirer la musique.</li>
+      <li>Le panneau indique le tempo et le nombre de coups détectés. Si le tempo est faux (morceau très syncopé), choisis « Grosse caisse » ou « Attaques » comme repères plutôt que « Temps ».</li>
+    </ul>
+    <h4>${ic('dance')} Danse automatique</h4>
+    <p>L'icône dé + note pose, en un clic, des <b>effets tirés au hasard</b> sur les repères de la musique, puis lance la lecture : le collage danse.</p>
+    <ul>
+      <li><b>Repères</b> : grosse caisse, temps (grille du tempo) ou toutes les attaques.</li>
+      <li><b>Cible</b> : tous les éléments de la feuille (hors éléments verrouillés), ou seulement la sélection. Les éléments réagissent chacun leur tour, sans se chevaucher.</li>
+      <li><b>Effets possibles</b> : rebondit, saute, battement, tremble, balancier, clignote, tour sur soi-même. Clique une icône pour la retirer ou la remettre.</li>
+      <li><b>Intensité</b> (1 à 10) : part des coups utilisée et nombre d'éléments qui réagissent à chaque coup.</li>
+      <li><b>Danser !</b> pose les effets ; recliquer donne <b>un autre tirage</b> en remplaçant le précédent. <kbd>Ctrl</kbd>+<kbd>Z</kbd> annule toute la danse d'un coup.</li>
+    </ul>
+    <p>Ce sont des images clés ordinaires : tu peux ensuite les déplacer, les modifier ou les supprimer dans la timeline, ou ajouter tes propres effets par-dessus.</p>` },
+  {
     id: 'export', title: 'Exporter la vidéo et les images', icon: 'film', html: `
     <h4>${ic('film')} Vidéo</h4>
     <ul>
       <li>Choisis la <b>durée</b> (par défaut un cycle complet), la fréquence (<b>24, 30 ou 60 images/s</b>) et la taille (<b>100 %</b> ou <b>50 %</b>).</li>
       <li>Chaque image est calculée à l'instant exact, puis encodée en <b>MP4 H.264</b> (ou WebM si H.264 n'est pas disponible). Une barre de progression permet d'annuler.</li>
-      <li>La vidéo n'a pas de piste audio.</li>
+      <li>Si le projet a une <b>musique</b> (voir « Musique et danse automatique »), elle est ajoutée à la vidéo (AAC en MP4, Opus en WebM). Si le navigateur ne sait pas encoder le son, l'export le signale et la vidéo est muette.</li>
     </ul>
     <h4>${ic('png')} Image PNG</h4>
     <p>Exporte la feuille telle qu'elle est (fond et texture compris).</p>
@@ -209,7 +234,7 @@ export const HELP: HelpSection[] = [
       <li>${ic('undo')} ${ic('redo')} ${k('Ctrl')}+${k('Z')} / ${k('Ctrl')}+${k('Y')} : annuler et rétablir (60 niveaux).</li>
     </ul>
     <h4>Enregistrement automatique</h4>
-    <p>Toutes les 20 secondes, et quand la fenêtre passe en arrière-plan, un <b>brouillon</b> est gardé sur l'ordinateur tant qu'il y a des modifications non enregistrées (indication en bas à droite). Au lancement suivant, un bandeau propose de le <b>restaurer</b> ou de le supprimer. Il ne remplace jamais ton fichier ; un enregistrement normal l'efface.</p>` },
+    <p>La musique est enregistrée avec le projet (le fichier grossit d'autant). Toutes les 20 secondes, et quand la fenêtre passe en arrière-plan, un <b>brouillon</b> est gardé sur l'ordinateur tant qu'il y a des modifications non enregistrées (indication en bas à droite). Au lancement suivant, un bandeau propose de le <b>restaurer</b> ou de le supprimer. Il ne remplace jamais ton fichier ; un enregistrement normal l'efface.</p>` },
   {
     id: 'keys', title: 'Raccourcis clavier', icon: 'key', html: `
     <table class="keys">

@@ -56,6 +56,13 @@ Panneau en bas, que l'on étire vers le haut en tirant sa poignée (double-clic 
 - Glisser un losange pour le décaler (pas de 0,05 s, Maj = libre) ; l'éditeur permet de saisir l'instant et la valeur au clavier, de choisir l'interpolation (constante, douce, palier) ou de supprimer (Suppr).
 - Durée de la timeline : automatique ou saisie ; zoom au curseur ou Ctrl+molette. Tout est enregistré dans le projet, lu à l'export vidéo et dans le manifeste.
 
+## Musique et danse automatique
+
+- **Piste son** (icône note de la timeline, ou glisser un MP3 / WAV / OGG / M4A / FLAC sur la fenêtre) : une musique par projet, enregistrée **dans** le projet (40 Mo maximum), lue avec l'animation, affichée dans la timeline avec sa forme d'onde. La durée de la timeline prend celle de la musique.
+- **Analyse du rythme** (`src/audio.ts`, traitement du signal, aucun modèle d'IA, tout en local) : séparation graves / aigus, courbes d'attaque, pics avec seuil adaptatif, tempo par autocorrélation, grille de temps calée sur les attaques. Trois jeux de repères : grosse caisse, temps, toutes les attaques ; réglage de sensibilité.
+- **Danse automatique** (icône dé + note) : pose des effets tirés au hasard (rebondit, saute, battement, tremble, balancier, clignote, tour sur soi-même) sur les repères choisis, pour tous les éléments ou la sélection, selon une intensité ; « Danser ! » relance un autre tirage en remplaçant le précédent ; Ctrl+Z annule tout d'un coup.
+- **Export vidéo avec le son** : AAC en MP4 (ou Opus en MP4 / WebM selon le navigateur) ; si aucun codec audio n'est disponible, l'export le signale et la vidéo est muette.
+
 ## Aimantation, verrouillage, effets
 
 - **Aimantation** (icône aimant, à droite de la barre d'options, mémorisée) : en déplaçant, les bords et le centre de l'élément se collent à ceux de la feuille et des autres éléments (guides roses) ; la rotation se cale par crans de 15° ; dans la timeline, la tête de lecture et les images clés se collent aux autres images clés. Alt désactive l'aimantation le temps du geste.

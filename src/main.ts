@@ -6,6 +6,7 @@ import { ACC_KINDS, ACC_COLORS, ACC_DEFAULTS, type AccCat, type AccKind, type Ac
 import { encodeVideo, videoSupported } from './video';
 import { samAvailable, segment, forget, type SamPoint } from './sam';
 import './fonts.css';
+import { decodeAudio, analyse, waveform, Player, type Analysis } from './audio';
 import { makeZip, type ZipEntry } from './zip';
 import { HELP } from './help';
 import { type PaperKind, PAPERS, renderPaperOverlay } from './paper';
@@ -264,7 +265,7 @@ async function importFile(f: File) {
   commit();
   status(`Importé : ${f.name} (${c.width}×${c.height}). Clique « Détourer ».`);
 }
-const importAll = async (fl: FileList | File[]) => { for (const f of Array.from(fl)) { if (/\.maxernzt$/i.test(f.name)) await loadProject(f); else if (f.type.startsWith('image/')) await importFile(f); } };
+const importAll = async (fl: FileList | File[]) => { for (const f of Array.from(fl)) { if (/\.maxernzt$/i.test(f.name)) await loadProject(f); else if (f.type.startsWith('image/')) await importFile(f); else if (f.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac|opus)$/i.test(f.name)) await loadAudioFile(f); } };
 $('btn-import').onclick = () => $<HTMLInputElement>('file').click();
 $<HTMLInputElement>('file').onchange = e => { const i = e.target as HTMLInputElement; importAll(i.files!); i.value = ''; };
 addEventListener('dragover', e => { e.preventDefault(); if (e.dataTransfer?.types.includes('Files')) document.body.classList.add('drop'); });
@@ -959,13 +960,13 @@ async function exportVideo() {
   const fps = vid.fps, frames = Math.max(2, Math.round(vidDuration() * fps));
   const W = Math.round(PW * vid.scale / 2) * 2, H = Math.round(PH * vid.scale / 2) * 2;   // H.264 veut des dimensions paires
   closeVidPop(); stopPlay(); closeAccPop(); closeTextPop();
-  startPlay(); paused = true;                                                           // pose de repos mémorisée, boules préparées ; on pilote nous-mêmes le temps
+  startPlay(); paused = true; audioStop();                                              // pose de repos mémorisée, boules préparées ; on pilote nous-mêmes le temps
   const saveView = { ...view }; world.position.set(0, 0); world.scale.set(1); ui.visible = false;
   const out = makeCanvas(W, H), octx = out.getContext('2d')!;
   renderCancel = false; $('render-ov').classList.add('on'); $('render-txt').textContent = 'Rendu de la vidéo…'; ($('render-bar') as HTMLElement).style.width = '0%';
   const t0 = performance.now();
   try {
-    const res = await encodeVideo({ width: W, height: H, fps, frames }, i => {
+    const res = await encodeVideo({ width: W, height: H, fps, frames, audio: audioTrack && !audioTrack.muted ? { buffer: audioTrack.buf, volume: audioTrack.vol } : undefined }, i => {
       animT = i / fps; applyAnim();
       const src = app.renderer.extract.canvas({ target: world, frame: new Rectangle(0, 0, PW, PH), resolution: vid.scale }) as HTMLCanvasElement;
       octx.drawImage(src, 0, 0, W, H);
@@ -973,7 +974,8 @@ async function exportVideo() {
     }, done => { ($('render-bar') as HTMLElement).style.width = (done / frames) * 100 + '%'; $('render-txt').textContent = `Rendu de la vidéo… ${Math.round((done / frames) * 100)} %`; }, () => renderCancel);
     if (!res) { toast('Export annulé', '', 'warn'); return; }
     const name = `${projectName}.${res.ext}`, secs = Math.round((performance.now() - t0) / 100) / 10;
-    const detail = `${W}×${H}, ${fps} i/s, ${(frames / fps).toFixed(1)} s, ${fmtSize(res.blob.size)} — rendu en ${secs} s`;
+    const wantSound = !!audioTrack && !audioTrack.muted, sound = wantSound ? (res.audio ? ', avec le son' : ', SANS le son (codec audio indisponible ici)') : '';
+    const detail = `${W}×${H}, ${fps} i/s, ${(frames / fps).toFixed(1)} s, ${fmtSize(res.blob.size)}${sound} — rendu en ${secs} s`;
     if (tauri) {
       const path = await nativeSave(res.blob, name, res.ext === 'mp4' ? 'Vidéo MP4' : 'Vidéo WebM', res.ext);
       if (path) toast('Vidéo exportée', `${baseName(path)} — ${detail}\n${path}`, 'ok'); else toast('Export annulé', 'Vidéo rendue mais non enregistrée.', 'warn');
@@ -1078,7 +1080,8 @@ function projectJson(): string {
     const r = restPose.get(l);   // en lecture ou en pause sur la timeline, on enregistre la pose de repos, pas la pose animée
     return { id: l.id, name: l.name, visible: l.visible, locked: l.locked || undefined, fx: l.fx, anim: l.anim, tl: l.tl, acc: l.acc, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: r?.x ?? l.box.x, y: r?.y ?? l.box.y, rotation: r?.r ?? l.box.rotation, scaleX: r?.sx ?? l.box.scale.x, scaleY: r?.sy ?? l.box.scale.y };
   });
-  return JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, paperTex: paperKind, paperAmt, tree: serialize(root), duration: tlDurManual, layers: out, images });
+  const au = audioTrack ? (audioTrack.b64 ??= bytesToB64(audioTrack.bytes), { name: audioTrack.name, mime: audioTrack.mime, data: audioTrack.b64, vol: audioTrack.vol, muted: audioTrack.muted, sens: audioTrack.sens, src: audioTrack.src }) : undefined;
+  return JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, paperTex: paperKind, paperAmt, tree: serialize(root), duration: tlDurManual, layers: out, images, audio: au });
 }
 async function saveProject(asNew = false) {
   stopPlay();
@@ -1139,6 +1142,7 @@ async function loadProject(f: File, path?: string) {
     const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, locked: !!l.locked, fx: l.fx, anim: l.anim, tl: l.tl, acc: l.acc, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
     restore({ dur: typeof d.duration === 'number' ? d.duration : null, paper: Array.isArray(d.paper) && d.paper.length === 2 ? [d.paper[0], d.paper[1]] : undefined, layers: ls, bg: d.bg ?? bgColor, pk: d.paperTex ?? 'none', pa: typeof d.paperAmt === 'number' ? d.paperAmt : 70, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
+    if (d.audio?.data) { try { await setAudio(b64ToBytes(d.audio.data), d.audio.name, d.audio.mime, { vol: d.audio.vol, muted: d.audio.muted, sens: d.audio.sens, src: d.audio.src, keepDuration: true }); } catch (err) { toast('Musique du projet illisible', String(err), 'warn'); clearAudio(); } } else clearAudio();
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); projectPath = path ?? null; projectHandle = null; commit(); dirty = false;
     if (path) $('btn-save').dataset.tip = `Enregistrer (Ctrl+S) — ${path}`;
     status(`Projet « ${projectName} » ouvert (${ls.length} calques).`); toast('Projet ouvert', `${projectName} — ${ls.length} calques`, 'ok');
@@ -1158,7 +1162,7 @@ $<HTMLInputElement>('file-proj').onchange = e => { const i = e.target as HTMLInp
 $('btn-new').onclick = () => {
   stopPlay();
   if (layers.length && dirty && !confirm('Vider la feuille ? (tu pourras annuler avec Ctrl+Z)')) return;
-  restore({ layers: [], bg: bgColor, pk: 'none', tree: [], sel: [] }); projectName = 'collage'; projectPath = null; projectHandle = null; $('btn-save').dataset.tip = 'Enregistrer (Ctrl+S)'; commit(); status('Nouvelle feuille.');
+  restore({ layers: [], bg: bgColor, pk: 'none', tree: [], sel: [] }); clearAudio(); projectName = 'collage'; projectPath = null; projectHandle = null; $('btn-save').dataset.tip = 'Enregistrer (Ctrl+S)'; commit(); status('Nouvelle feuille.');
 };
 addEventListener('beforeunload', e => { if (dirty && layers.length) e.preventDefault(); });
 
@@ -1403,7 +1407,7 @@ app.ticker.add(() => {
     for (const g of snapLines) { if (g.x !== undefined) { const sx = view.x + g.x * view.s; selG.moveTo(sx, 0).lineTo(sx, app.screen.height); } else { const sy = view.y + g.y! * view.s; selG.moveTo(0, sy).lineTo(app.screen.width, sy); } }
     selG.stroke({ width: 1, color: 0xff4fd8 });
   }
-  if (playing) { if (!paused) { animT += app.ticker.deltaMS / 1000; const D = tlDuration(); if (animT >= D) animT %= D; } applyAnim(); if (!paused) { syncPanels(); return; } }
+  if (playing) { if (!paused) { animT += app.ticker.deltaMS / 1000; const D = tlDuration(); if (animT >= D) { animT %= D; audioPlay(animT); } } applyAnim(); if (!paused) { syncPanels(); return; } }
   drawAnimPaths();
   if (selection.size > 1) for (const l of selection) { const q = frameCorners(l).flatMap(c => [c.x, c.y]); selG.poly(q).stroke({ width: 1, color: 0xffffff, alpha: 0.7 }); }
   const h = selHandles();
@@ -1872,22 +1876,52 @@ function playUI() {
   ($('btn-stop') as HTMLButtonElement).disabled = !playing;
   ui.alpha = playing && !paused ? 0 : 1;
 }
+
+// ---- piste son : une musique par projet ; la lecture suit celle de la timeline
+type BeatSource = 'kicks' | 'beats' | 'hits';
+interface AudioTrack { id: number; name: string; mime: string; bytes: ArrayBuffer; b64?: string; buf: AudioBuffer; an: Analysis; wave: Float32Array; vol: number; muted: boolean; sens: number; src: BeatSource }
+let audioTrack: AudioTrack | null = null, audioSeq = 0;
+const player = new Player();
+const audioPlay = (t: number) => { if (audioTrack && !audioTrack.muted) player.play(audioTrack.buf, t, audioTrack.vol); };
+const audioStop = () => player.stop();
+const beatsOf = (a: AudioTrack) => (a.src === 'kicks' ? a.an.kicks : a.src === 'beats' ? a.an.beats : a.an.hits);
+const bytesToB64 = (b: ArrayBuffer) => { const u = new Uint8Array(b); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
+const b64ToBytes = (t: string) => { const s = atob(t), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; };
+async function setAudio(bytes: ArrayBuffer, name: string, mime: string, o: { vol?: number; muted?: boolean; sens?: number; src?: BeatSource; keepDuration?: boolean } = {}) {
+  stopPlay();
+  const buf = await decodeAudio(bytes), sens = o.sens ?? 0.5;
+  audioTrack = { id: ++audioSeq, name, mime, bytes, buf, an: analyse(buf, sens), wave: waveform(buf, 6000), vol: o.vol ?? 0.9, muted: !!o.muted, sens, src: o.src ?? 'kicks' };
+  if (!o.keepDuration) tlDurManual = Math.max(1, Math.round(buf.duration * 10) / 10);   // la timeline prend la longueur de la musique (modifiable)
+  tlSig = ''; dirty = true; rev++; syncAudioUI();
+  return audioTrack;
+}
+function clearAudio() { stopPlay(); audioTrack = null; tlSig = ''; syncAudioUI(); }
+async function loadAudioFile(f: File) {
+  if (f.size > 40e6) { toast('Musique trop lourde', 'Au-delà de 40 Mo le projet deviendrait trop gros : utilise un MP3 plus léger.', 'warn'); return; }
+  try {
+    const a = await setAudio(await f.arrayBuffer(), f.name, f.type || 'audio/mpeg');
+    toast('Musique chargée', `${f.name} — ${a.an.bpm || '?'} battements/min, ${a.an.kicks.length} coups de grosse caisse détectés, ${a.buf.duration.toFixed(1)} s`, 'ok');
+    status('Musique chargée : la timeline prend sa durée. « Danse automatique » (icône dé) pose des effets sur les temps.');
+  } catch (e) { toast('Musique illisible', String(e instanceof Error ? e.message : e), 'err'); }
+}
+
 function startPlay() {
   restPose.clear(); groupRest.clear();
   for (const l of layers) restPose.set(l, { x: l.box.x, y: l.box.y, r: l.box.rotation, sx: l.box.scale.x, sy: l.box.scale.y });
   for (const l of layers) { let uses = false; for (let n: Node | null = l; n && n !== root; n = n.parent) if (keysOf((animOf(n) ?? { pts: [], dur: 1, mode: 'loop', ease: 'linear', follow: false }) as Anim).some(kk => kk.ball)) uses = true; if (uses) ensureBall(l); }
-  playing = true; paused = false; animT = 0; playUI();
+  playing = true; paused = false; animT = 0; playUI(); audioPlay(0);
   status('Lecture — Espace pour mettre en pause, Échap pour arrêter.');
 }
-function pausePlay() { if (!playing) startPlay(); paused = true; playUI(); status('En pause : ◆ ajoute une image clé ; la poignée ronde fait pivoter.'); }
+function pausePlay() { if (!playing) startPlay(); paused = true; audioStop(); playUI(); status('En pause : ◆ ajoute une image clé ; la poignée ronde fait pivoter.'); }
 function stopPlay() {
   if (!playing) return;
+  audioStop();
   for (const [l, p] of restPose) { l.box.position.set(p.x, p.y); l.box.rotation = p.r; l.box.scale.set(p.sx, p.sy); l.box.alpha = 1; setCrumple(l, 0); }
   restPose.clear(); groupRest.clear(); playing = false; paused = false; applyVis(); playUI(); status('Lecture arrêtée.');
 }
 $('btn-play').onclick = () => {
   if (playing && !paused) { pausePlay(); return; }
-  if (playing) { paused = false; playUI(); status('Lecture.'); return; }
+  if (playing) { paused = false; audioPlay(animT); playUI(); status('Lecture.'); return; }
   if (anyAnim()) startPlay(); else status("Rien à lire : dessine une trajectoire (P) ou pose des images clés dans la timeline.");
 };
 $('btn-stop').onclick = stopPlay;
@@ -1986,7 +2020,7 @@ function editDuration(v: number) {
   editAnim(a => ({ ...a, dur: v }));
   if (ak) animT = keyStarts(animOf(ak.node)!)[ak.i] + off;
 }
-function playheadTo(t: number) { if (!playing) startPlay(); paused = true; playUI(); animT = t; }
+function playheadTo(t: number) { if (!playing) startPlay(); paused = true; audioStop(); playUI(); animT = t; }
 let kr: { node: Node; idx: number; spin0: number; cx: number; cy: number; last: number; acc: number } | null = null;
 function startKeyRot(p: Pt) {
   const ak = activeKey(); if (!ak || hitHandle(p) !== 'rot') return;
@@ -2071,6 +2105,8 @@ const NAMEW = 190;                                   // largeur de la colonne de
 let tlPps = 90, recording = false, tlSig = '';       // pixels par seconde ; enregistrement automatique ; signature du dernier rendu
 let selKF: { node: Node; prop: PropId; t: number } | null = null;
 const tlOpen = new Set<Node>(), tlSeen = new Set<Node>();
+const tlIds = new WeakMap<object, number>(); let tlIdSeq = 0;
+const tlIdent = (t: object | undefined) => (t ? (tlIds.get(t) ?? (tlIds.set(t, ++tlIdSeq), tlIdSeq)) : 0);   // les courbes sont remplacées (jamais modifiées) : l'objet suffit à les reconnaître
 const nodeName = (n: Node) => (isGroup(n) ? n.name : (n as Layer).name);
 const nodeKey = (n: Node) => (isGroup(n) ? 'g' : 'l') + n.id;
 const clampT = (t: number) => Math.max(0, Math.min(tlDuration(), t));
@@ -2152,6 +2188,21 @@ function renderTimeline() {
   const steps = [0.1, 0.25, 0.5, 1, 2, 5, 10, 30], step = steps.find(s => s * tlPps >= 62) ?? 30;
   for (let t = 0; t <= D + 1e-6; t += step) { const m = document.createElement('span'); m.className = 'rt'; m.style.left = t * tlPps + 'px'; m.textContent = Math.round(t * 100) / 100 + ' s'; ruler.appendChild(m); }
   const rows = $('tl-rows'); rows.innerHTML = '';
+  if (audioTrack) {   // piste son : forme d'onde et repères des temps
+    const A = audioTrack, row = document.createElement('div'); row.className = 'tr audio';
+    const nm = document.createElement('div'); nm.className = 'tn';
+    nm.innerHTML = '<svg class="ic"><use href="#i-note"/></svg><span class="nm"></span>'; (nm.querySelector('.nm') as HTMLElement).textContent = A.name;
+    nm.title = A.name; nm.onclick = () => $('btn-audio').click();
+    const tt = document.createElement('div'); tt.className = 'tt';
+    const secs = Math.min(D, A.buf.duration), w = Math.max(1, Math.round(secs * tlPps)), cv = document.createElement('canvas');
+    cv.width = Math.min(w, 16000); cv.height = 44; cv.style.width = w + 'px'; cv.style.height = '44px';
+    const g = cv.getContext('2d')!, k = A.wave.length / A.buf.duration;
+    g.fillStyle = A.muted ? '#5a616c' : '#6fa3ff';
+    for (let x = 0; x < cv.width; x++) { const t = (x / cv.width) * secs, v = A.wave[Math.min(A.wave.length - 1, Math.floor(t * k))], h = Math.max(1, v * 40); g.fillRect(x, 22 - h / 2, 1, h); }
+    g.fillStyle = '#f2b134';
+    for (const t of beatsOf(A)) { if (t > secs) break; g.fillRect(Math.round((t / secs) * cv.width) - 1, 0, 2, 44); }
+    tt.appendChild(cv); row.append(nm, tt); rows.appendChild(row);
+  }
   const sel = new Set(selectedNodes());
   for (const r of timelineRows()) {
     const isNode = r.kind === 'node', row = document.createElement('div');
@@ -2276,6 +2327,8 @@ const FX: Fx[] = [
   { id: 'pulse', name: 'Battement (pulsation)', gen: (b, d) => ({ scale: [{ t: 0, v: b.scale }, { t: 0.15 * d, v: b.scale * 1.25 }, { t: 0.3 * d, v: b.scale }, { t: 0.45 * d, v: b.scale * 1.18 }, { t: d, v: b.scale }] }) },
   { id: 'shake', name: 'Tremble', gen: (b, d) => ({ pos: [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => ({ t: (i / 8) * d, v: b.x + (i === 0 || i === 8 ? 0 : (i % 2 ? 1 : -1) * 16 * (1 - i / 9)), w: b.y, e: 'linear' as KEase })) }) },
   { id: 'swing', name: 'Balancier', gen: (b, d) => ({ rot: [{ t: 0, v: b.rot }, { t: 0.25 * d, v: b.rot + 15 }, { t: 0.75 * d, v: b.rot - 15 }, { t: d, v: b.rot }] }) },
+  { id: 'spin', name: 'Tour sur soi-même', gen: (b, d) => ({ rot: [{ t: 0, v: b.rot }, { t: d, v: b.rot + 360 }] }) },
+  { id: 'jump', name: 'Saute', gen: (b, d) => ({ pos: [{ t: 0, v: b.x, w: b.y }, { t: 0.35 * d, v: b.x, w: b.y - 110 }, { t: 0.7 * d, v: b.x, w: b.y }, { t: 0.85 * d, v: b.x, w: b.y - 18 }, { t: d, v: b.x, w: b.y }], scale: [{ t: 0, v: b.scale }, { t: 0.35 * d, v: b.scale * 1.08 }, { t: 0.7 * d, v: b.scale * 0.94 }, { t: d, v: b.scale }] }) },
   { id: 'blink', name: 'Clignote', gen: (b, d) => ({ vis: [1, 0, 1, 0, 1, 0, 1].map((v, i) => ({ t: (i / 6) * d, v, e: 'hold' as KEase })) }) },
 ];
 /** Pose les images clés d'un effet pour `n`, à partir de t0 : remplace celles de la plage couverte, garde l'état d'avant. */
@@ -2317,6 +2370,104 @@ addEventListener('pointerdown', e => { if (fxPop.classList.contains('open') && !
 $<HTMLInputElement>('fx-dur').oninput = e => { const r = e.target as HTMLInputElement; $('v-fx-dur').textContent = (+r.value).toFixed(1) + ' s'; r.style.setProperty('--p', ((+r.value - +r.min) / (+r.max - +r.min)) * 100 + '%'); };
 $<HTMLInputElement>('fx-dur').dispatchEvent(new Event('input'));
 
+
+// ---- piste son : boutons, réglages, danse automatique
+const audPop = $('audpop'), dancePop = $('dancepop');
+function syncAudioUI() {
+  const a = audioTrack;
+  $('btn-audio').classList.toggle('on', !!a && !a.muted); $('btn-dance').toggleAttribute('disabled', !a);
+  if (!a) { audPop.classList.remove('open'); dancePop.classList.remove('open'); return; }
+  $('aud-name').textContent = a.name;
+  $('aud-info').textContent = `${a.an.bpm || '?'} bpm · ${a.an.kicks.length} grosse caisse · ${a.an.hits.length} attaques · ${a.buf.duration.toFixed(1)} s`;
+  const v = $<HTMLInputElement>('aud-vol'); v.value = String(Math.round(a.vol * 100)); v.style.setProperty('--p', v.value + '%'); $('v-aud-vol').textContent = v.value + ' %';
+  const s = $<HTMLInputElement>('aud-sens'); s.value = String(Math.round(a.sens * 100)); s.style.setProperty('--p', s.value + '%'); $('v-aud-sens').textContent = s.value + ' %';
+  $('aud-mute').classList.toggle('on', a.muted);
+  $('aud-mute').querySelector('use')!.setAttribute('href', a.muted ? '#i-mute' : '#i-sound');
+  dancePop.querySelectorAll<HTMLElement>('[data-bsrc]').forEach(b => b.classList.toggle('on', b.dataset.bsrc === a.src));
+}
+function placePop(pop: HTMLElement, btn: HTMLElement) {
+  const r = btn.getBoundingClientRect();
+  pop.style.left = Math.max(8, Math.min(r.left - 40, innerWidth - 300)) + 'px'; pop.style.bottom = innerHeight - r.top + 8 + 'px';
+}
+$('btn-audio').onclick = e => {
+  e.stopPropagation();
+  if (!audioTrack) { $<HTMLInputElement>('file-audio').click(); return; }
+  dancePop.classList.remove('open');
+  if (audPop.classList.contains('open')) { audPop.classList.remove('open'); return; }
+  placePop(audPop, $('btn-audio')); audPop.classList.add('open'); syncAudioUI();
+};
+$<HTMLInputElement>('file-audio').onchange = e => { const i = e.target as HTMLInputElement; if (i.files![0]) loadAudioFile(i.files![0]); i.value = ''; };
+$('aud-replace').onclick = () => $<HTMLInputElement>('file-audio').click();
+$('aud-remove').onclick = () => { clearAudio(); status('Musique retirée.'); };
+$('aud-mute').onclick = () => { if (!audioTrack) return; audioTrack.muted = !audioTrack.muted; if (audioTrack.muted) audioStop(); else if (playing && !paused) audioPlay(animT); tlSig = ''; dirty = true; rev++; syncAudioUI(); };
+$<HTMLInputElement>('aud-vol').oninput = e => { if (!audioTrack) return; audioTrack.vol = +(e.target as HTMLInputElement).value / 100; player.setVolume(audioTrack.vol); dirty = true; rev++; syncAudioUI(); };
+let sensTimer = 0;
+$<HTMLInputElement>('aud-sens').oninput = e => {
+  if (!audioTrack) return; const a = audioTrack; a.sens = +(e.target as HTMLInputElement).value / 100;
+  clearTimeout(sensTimer); sensTimer = window.setTimeout(() => { a.an = analyse(a.buf, a.sens); tlSig = ''; dirty = true; rev++; syncAudioUI(); }, 200);
+  $('v-aud-sens').textContent = Math.round(a.sens * 100) + ' %';
+};
+addEventListener('pointerdown', e => {
+  const t = e.target as HTMLElement;
+  if (audPop.classList.contains('open') && !audPop.contains(t) && !t.closest('#btn-audio')) audPop.classList.remove('open');
+  if (dancePop.classList.contains('open') && !dancePop.contains(t) && !t.closest('#btn-dance')) { dancePop.classList.remove('open'); $('btn-dance').classList.remove('on'); }
+});
+
+// danse automatique : des effets tirés au hasard sur les temps de la musique
+const DANCE_FX = ['bounce', 'jump', 'pulse', 'shake', 'swing', 'blink', 'spin'];
+const danceOn = new Set(DANCE_FX);
+let danceSeed = 1, danceHi = -1, danceTarget: 'sel' | 'all' = 'all';
+const rngFrom = (seed: number) => () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+for (const id of DANCE_FX) {
+  const fx = FX.find(f => f.id === id)!, b = document.createElement('button');
+  b.className = 'ib fxb on'; b.dataset.dfx = id; b.dataset.tip = fx.name; b.dataset.pos = 'top'; b.innerHTML = `<svg class="ic"><use href="#i-fx-${id}"/></svg>`;
+  b.onclick = () => { if (danceOn.has(id)) { if (danceOn.size > 1) danceOn.delete(id); } else danceOn.add(id); b.classList.toggle('on', danceOn.has(id)); };
+  $('dance-fx').appendChild(b);
+}
+dancePop.querySelectorAll<HTMLElement>('[data-bsrc]').forEach(b => b.onclick = () => { if (!audioTrack) return; audioTrack.src = b.dataset.bsrc as BeatSource; tlSig = ''; syncAudioUI(); });
+dancePop.querySelectorAll<HTMLElement>('[data-dtarget]').forEach(b => b.onclick = () => { danceTarget = b.dataset.dtarget as 'sel' | 'all'; dancePop.querySelectorAll<HTMLElement>('[data-dtarget]').forEach(x => x.classList.toggle('on', x === b)); });
+$<HTMLInputElement>('dance-int').oninput = e => { const r = e.target as HTMLInputElement; r.style.setProperty('--p', ((+r.value - 1) / 9) * 100 + '%'); $('v-dance-int').textContent = r.value + ' / 10'; };
+$<HTMLInputElement>('dance-int').dispatchEvent(new Event('input'));
+function danceGenerate() {
+  const A = audioTrack; if (!A) { status("Charge d'abord une musique."); return; }
+  stopPlay();
+  if (danceHi === hi) undo();   // « autre tirage » : on retire d'abord ce que la dernière danse avait posé
+  const D = tlDuration(), times = beatsOf(A).filter(t => t < D - 0.15);
+  if (!times.length) { status('Aucun temps détecté : augmente la sensibilité dans les réglages de la musique.'); return; }
+  const rnd = rngFrom(danceSeed++ * 7919 + 13), inten = +$<HTMLInputElement>('dance-int').value;
+  const sel = selectedNodes().filter(n => !isLocked(n));
+  const pool: Node[] = danceTarget === 'sel' && sel.length ? sel : root.children.filter(n => !isLocked(n));
+  if (!pool.length) { status('Rien à animer : ajoute des éléments sur la feuille.'); return; }
+  const fxs = DANCE_FX.filter(id => danceOn.has(id)).map(id => FX.find(f => f.id === id)!);
+  const keep = 0.3 + 0.07 * inten, busy = new Map<Node, number>(), bag: Node[] = [];
+  let count = 0; const used = new Set<Node>();
+  for (let i = 0; i < times.length; i++) {
+    if (rnd() > keep) continue;
+    const t = times[i], next = times[i + 1] ?? t + 0.6, gap = next - t;
+    const want = Math.min(pool.length, 1 + Math.floor((rnd() * inten) / 2.6));
+    for (let k = 0; k < want; k++) {
+      if (!bag.length) bag.push(...pool.slice().sort(() => rnd() - 0.5));   // « sac » mélangé : chacun son tour avant de recommencer
+      let n: Node | undefined, tries = 0;
+      while (bag.length && tries++ < 6) { const c = bag.pop()!; if ((busy.get(c) ?? 0) <= t) { n = c; break; } }
+      if (!n) continue;
+      const d = Math.max(0.3, Math.min(1.1, gap * (0.8 + rnd() * 0.25)), 0.3), fx = fxs[Math.floor(rnd() * fxs.length)];
+      applyFx(n, fx, t, Math.min(d, D - t)); busy.set(n, t + d); used.add(n); count++;
+    }
+  }
+  tlSig = ''; commit(); danceHi = hi;
+  status(`Danse : ${count} effets posés sur ${used.size} élément${used.size > 1 ? 's' : ''}, calés sur ${A.src === 'kicks' ? 'la grosse caisse' : A.src === 'beats' ? 'les temps' : 'les attaques'}. Clique le dé pour un autre tirage.`);
+  startPlay();   // et hop : ça danse
+}
+$('btn-dance').onclick = e => {
+  e.stopPropagation();
+  if (!audioTrack) { status("Charge d'abord une musique (icône note)."); return; }
+  audPop.classList.remove('open');
+  if (dancePop.classList.contains('open')) { dancePop.classList.remove('open'); $('btn-dance').classList.remove('on'); return; }
+  placePop(dancePop, $('btn-dance')); dancePop.classList.add('open'); $('btn-dance').classList.add('on'); syncAudioUI();
+};
+$('dance-go').onclick = () => danceGenerate();
+syncAudioUI();
+
 $('btn-tlkey').onclick = () => {
   const ns = selectedNodes(); if (!ns.length) { status("Sélectionne d'abord un élément ou un groupe."); return; }
   if (!playing) playheadTo(animT); else if (!paused) pausePlay();
@@ -2344,9 +2495,9 @@ function recXf(e: PointerEvent, p: Pt) {
 
 function syncTimeline() {
   const D = tlDuration(), sel = new Set(selectedNodes());
-  const sig = [tlPps, D.toFixed(2), selKF ? selKF.prop + selKF.t : '', timelineRows().map(r => {
+  const sig = [tlPps, D.toFixed(2), audioTrack ? `${audioTrack.id}${audioTrack.src}${audioTrack.muted ? 'm' : ''}${audioTrack.an.hits.length}` : '', selKF ? selKF.prop + selKF.t : '', timelineRows().map(r => {
     const a = animOf(r.node);
-    return `${r.kind}${nodeKey(r.node)}${r.prop ?? ''}${tlOpen.has(r.node) ? 1 : 0}${sel.has(r.node) ? 1 : 0}${nodeName(r.node)}${JSON.stringify(tlOf(r.node) ?? '')}${r.kind === 'node' && a ? `${a.dur}${a.mode}${a.pts.length}${JSON.stringify(a.keys ?? '')}` : ''}`;
+    return `${r.kind}${nodeKey(r.node)}${r.prop ?? ''}${tlOpen.has(r.node) ? 1 : 0}${sel.has(r.node) ? 1 : 0}${nodeName(r.node)}${tlIdent(tlOf(r.node))}${r.kind === 'node' && a ? `${a.dur}${a.mode}${a.pts.length}${JSON.stringify(a.keys ?? '')}` : ''}`;
   }).join('|')].join('#');
   if (sig !== tlSig) { tlSig = sig; renderTimeline(); }
   const T = playing ? animT : 0, head = $('tl-head'), body = $('tl-body');
