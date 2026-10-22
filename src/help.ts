@@ -219,7 +219,7 @@ export const HELP: HelpSection[] = [
     id: 'export', title: 'Exporter la vidéo et les images', icon: 'film', html: `
     <h4>${ic('film')} Vidéo</h4>
     <ul>
-      <li>Choisis la <b>durée</b> (par défaut un cycle complet), la fréquence (<b>24, 30 ou 60 images/s</b>) et la taille (<b>100 %</b> ou <b>50 %</b>).</li>
+      <li>Choisis la <b>durée</b> (par défaut un cycle complet), la fréquence (<b>24, 30 ou 60 images/s</b>) et la taille (<b>100 %</b> ou <b>50 %</b>). Le réglage de poids (<b>Libre</b>, <b>&lt; 12 Mo</b> ou <b>&lt; 25 Mo</b>) calcule tout seul le débit pour que le fichier ne dépasse pas ce poids, son compris (par ex. pour Discord) ; l'indication sous les boutons donne le débit obtenu, et une image 50 % aide sur une longue vidéo.</li>
       <li>Chaque image est calculée à l'instant exact, puis encodée en <b>MP4 H.264</b> (ou WebM si H.264 n'est pas disponible). Une barre de progression permet d'annuler.</li>
       <li>Si le projet a une <b>musique</b> (voir « Musique et danse automatique »), elle est ajoutée à la vidéo (AAC en MP4, Opus en WebM). Si le navigateur ne sait pas encoder le son, l'export le signale et la vidéo est muette.</li>
     </ul>

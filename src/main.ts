@@ -919,7 +919,7 @@ for (const [id, w, h] of FORMATS) $(id).onclick = () => setFormat(w, h);
 syncFmt();
 
 // ---- export vidéo : la feuille est rendue image par image à l'instant i/fps puis encodée (MP4, ou WebM si le moteur n'a pas H.264)
-const vid = { fps: 30, scale: 1 };
+const vid = { fps: 30, scale: 1, cap: 0 };   // cap : poids maximal visé en Mo (0 = libre)
 const vidPop = $('vidpop');
 /** Durée d'un cycle complet de l'animation la plus longue (un aller-retour compte double). */
 function animCycleMax(): number {
@@ -934,8 +934,10 @@ const vidDuration = () => Math.max(0.2, parseFloat($<HTMLInputElement>('vid-dur'
 function syncVid() {
   vidPop.querySelectorAll<HTMLElement>('[data-fps]').forEach(b => b.classList.toggle('on', +b.dataset.fps! === vid.fps));
   vidPop.querySelectorAll<HTMLElement>('[data-scale]').forEach(b => b.classList.toggle('on', +b.dataset.scale! === vid.scale));
+  vidPop.querySelectorAll<HTMLElement>('[data-cap]').forEach(b => b.classList.toggle('on', +b.dataset.cap! === vid.cap));
   const W = Math.round(PW * vid.scale / 2) * 2, H = Math.round(PH * vid.scale / 2) * 2;
-  $('vid-info').textContent = `${W}×${H} · ${Math.max(2, Math.round(vidDuration() * vid.fps))} images`;
+  const kbps = vid.cap ? Math.round((vid.cap * 1024 * 1024 * 0.94 * 8) / Math.max(0.2, vidDuration()) / 1000) : 0;
+  $('vid-info').textContent = `${W}×${H} · ${Math.max(2, Math.round(vidDuration() * vid.fps))} images` + (vid.cap ? ` · ≈ ${kbps} kb/s${kbps < 400 ? ' (image très compressée : baisse la taille à 50 %)' : ''}` : '');
 }
 function closeVidPop() { vidPop.classList.remove('open'); $('btn-video').classList.remove('on'); }
 $('btn-video').onclick = () => {
@@ -946,8 +948,8 @@ $('btn-video').onclick = () => {
   vidPop.classList.add('open'); $('btn-video').classList.add('on'); syncVid();
 };
 vidPop.addEventListener('click', e => {
-  const b = (e.target as HTMLElement).closest<HTMLElement>('[data-fps],[data-scale]'); if (!b) return;
-  if (b.dataset.fps) vid.fps = +b.dataset.fps; else vid.scale = +b.dataset.scale!;
+  const b = (e.target as HTMLElement).closest<HTMLElement>('[data-fps],[data-scale],[data-cap]'); if (!b) return;
+  if (b.dataset.fps) vid.fps = +b.dataset.fps; else if (b.dataset.scale) vid.scale = +b.dataset.scale; else vid.cap = +b.dataset.cap!;
   syncVid();
 });
 $('vid-dur').oninput = syncVid;
@@ -965,7 +967,7 @@ async function exportVideo() {
   renderCancel = false; $('render-ov').classList.add('on'); $('render-txt').textContent = 'Rendu de la vidéo…'; ($('render-bar') as HTMLElement).style.width = '0%';
   const t0 = performance.now();
   try {
-    const res = await encodeVideo({ width: W, height: H, fps, frames, audio: audioTrack && !audioTrack.muted ? { buffer: audioTrack.buf, volume: audioTrack.vol } : undefined }, i => {
+    const res = await encodeVideo({ width: W, height: H, fps, frames, maxBytes: vid.cap ? vid.cap * 1024 * 1024 : undefined, audio: audioTrack && !audioTrack.muted ? { buffer: audioTrack.buf, volume: audioTrack.vol } : undefined }, i => {
       animT = i / fps; applyAnim();
       const src = app.renderer.extract.canvas({ target: world, frame: new Rectangle(0, 0, PW, PH), resolution: vid.scale }) as HTMLCanvasElement;
       octx.drawImage(src, 0, 0, W, H);

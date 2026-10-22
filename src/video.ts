@@ -3,7 +3,7 @@ import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4Target } from 'mp4-muxer';
 import { Muxer as WebmMuxer, ArrayBufferTarget as WebmTarget } from 'webm-muxer';
 
 export interface AudioSpec { buffer: AudioBuffer; volume: number }
-export interface VideoSpec { width: number; height: number; fps: number; frames: number; audio?: AudioSpec }
+export interface VideoSpec { width: number; height: number; fps: number; frames: number; audio?: AudioSpec; maxBytes?: number }   // maxBytes : poids visé (le débit est calculé pour ne pas le dépasser)
 export interface VideoResult { blob: Blob; ext: 'mp4' | 'webm'; codec: string; audio: boolean }
 
 const CANDIDATES: { codec: string; kind: 'mp4' | 'webm' }[] = [
@@ -14,20 +14,20 @@ const CANDIDATES: { codec: string; kind: 'mp4' | 'webm' }[] = [
 export const videoSupported = () => typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
 
 /** Codec audio disponible pour ce conteneur (AAC puis Opus en MP4, Opus en WebM), ou null : la vidéo sera alors muette. */
-async function pickAudio(mp4: boolean, sampleRate: number, channels: number) {
+async function pickAudio(mp4: boolean, sampleRate: number, channels: number, bitrate = 160000) {
   if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined') return null;
   const cands = mp4 ? [{ codec: 'mp4a.40.2', mux: 'aac' as const }, { codec: 'opus', mux: 'opus' as const }] : [{ codec: 'opus', mux: 'A_OPUS' as const }];
   for (const c of cands) {
-    try { const r = await AudioEncoder.isConfigSupported({ codec: c.codec, sampleRate, numberOfChannels: channels, bitrate: 160000 }); if (r.supported) return c; } catch { /* suivant */ }
+    try { const r = await AudioEncoder.isConfigSupported({ codec: c.codec, sampleRate, numberOfChannels: channels, bitrate }); if (r.supported) return c; } catch { /* suivant */ }
   }
   return null;
 }
 /** Encode la bande son (de 0 à `seconds`) et l'ajoute au conteneur. */
-async function encodeAudio(spec: AudioSpec, seconds: number, pick: { codec: string }, add: (c: EncodedAudioChunk, m?: EncodedAudioChunkMetadata) => void) {
+async function encodeAudio(spec: AudioSpec, seconds: number, bitrate: number, pick: { codec: string }, add: (c: EncodedAudioChunk, m?: EncodedAudioChunkMetadata) => void) {
   const { buffer, volume } = spec, ch = Math.min(2, buffer.numberOfChannels), sr = buffer.sampleRate;
   let failure: Error | null = null;
   const enc = new AudioEncoder({ output: (c, m) => add(c, m), error: e => { failure = e instanceof Error ? e : new Error(String(e)); } });
-  enc.configure({ codec: pick.codec, sampleRate: sr, numberOfChannels: ch, bitrate: 160000 });
+  enc.configure({ codec: pick.codec, sampleRate: sr, numberOfChannels: ch, bitrate });
   const total = Math.round(seconds * sr), block = 4800, src = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
   for (let at = 0; at < total; at += block) {
     if (failure) throw failure;
@@ -66,25 +66,27 @@ export async function encodeVideo(
   cancelled: () => boolean,
 ): Promise<VideoResult | null> {
   if (!videoSupported()) throw new Error("cette fenêtre ne sait pas encoder de vidéo (WebCodecs absent)");
-  const bitrate = Math.round(spec.width * spec.height * spec.fps * 0.15);
+  const seconds = spec.frames / spec.fps, audioBps = spec.maxBytes ? 96000 : 160000;
+  // poids visé : tout le budget (moins 6 % de marge pour le conteneur) moins la bande son, en débit constant pour que la taille soit prévisible
+  const bitrate = spec.maxBytes ? Math.max(100000, Math.floor((spec.maxBytes * 0.94 * 8) / seconds - (spec.audio ? audioBps : 0))) : Math.round(spec.width * spec.height * spec.fps * 0.15);
   const pick = await pickCodec(spec, bitrate);
   if (!pick) throw new Error('aucun codec vidéo disponible pour cette taille');
   const mp4 = pick.kind === 'mp4';
   const aSpec = spec.audio, aCh = aSpec ? Math.min(2, aSpec.buffer.numberOfChannels) : 0;
-  const aPick = aSpec ? await pickAudio(mp4, aSpec.buffer.sampleRate, aCh) : null;
+  const aPick = aSpec ? await pickAudio(mp4, aSpec.buffer.sampleRate, aCh, audioBps) : null;
   const aOpt = aPick && aSpec ? { codec: aPick.mux, numberOfChannels: aCh, sampleRate: aSpec.buffer.sampleRate } : undefined;
   const mux = mp4
     ? new Mp4Muxer({ target: new Mp4Target(), video: { codec: 'avc', width: spec.width, height: spec.height }, ...(aOpt ? { audio: aOpt as { codec: 'aac' | 'opus'; numberOfChannels: number; sampleRate: number } } : {}), fastStart: 'in-memory' })
     : new WebmMuxer({ target: new WebmTarget(), video: { codec: pick.codec === 'vp8' ? 'V_VP8' : 'V_VP9', width: spec.width, height: spec.height, frameRate: spec.fps }, ...(aOpt ? { audio: aOpt as { codec: 'A_OPUS'; numberOfChannels: number; sampleRate: number } } : {}) });
   if (aSpec && aPick) {   // la bande son d'abord (rapide), puis les images
-    await encodeAudio(aSpec, spec.frames / spec.fps, aPick, (c, m) => (mux as { addAudioChunk(c: EncodedAudioChunk, m?: EncodedAudioChunkMetadata): void }).addAudioChunk(c, m));
+    await encodeAudio(aSpec, seconds, audioBps, aPick, (c, m) => (mux as { addAudioChunk(c: EncodedAudioChunk, m?: EncodedAudioChunkMetadata): void }).addAudioChunk(c, m));
   }
   let failure: Error | null = null;
   const enc = new VideoEncoder({
     output: (chunk, meta) => (mux as { addVideoChunk(c: EncodedVideoChunk, m?: EncodedVideoChunkMetadata): void }).addVideoChunk(chunk, meta),
     error: e => { failure = e instanceof Error ? e : new Error(String(e)); },
   });
-  enc.configure({ codec: pick.codec, width: spec.width, height: spec.height, bitrate, framerate: spec.fps, ...(mp4 ? { avc: { format: 'avc' as const } } : {}) });
+  enc.configure({ codec: pick.codec, width: spec.width, height: spec.height, bitrate, framerate: spec.fps, ...(spec.maxBytes ? { bitrateMode: 'constant' as const } : {}), ...(mp4 ? { avc: { format: 'avc' as const } } : {}) });
   const keyEvery = Math.max(1, Math.round(spec.fps * 2));
   for (let i = 0; i < spec.frames; i++) {
     if (cancelled()) { enc.close(); return null; }
