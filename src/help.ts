@@ -231,6 +231,7 @@ export const HELP: HelpSection[] = [
     id: 'project', title: 'Projet, sauvegarde et brouillon', icon: 'save', html: `
     <ul>
       <li>${ic('new')} nouvelle feuille. ${ic('open')} ${k('Ctrl')}+${k('O')} ouvre un projet <b>.maxernzt</b>.</li>
+      <li>Un projet animé à la timeline s'ouvre <b>sur la pose de l'instant 0 s</b> (en pause) : les éléments qui n'apparaissent que plus tard ne sont plus tous affichés en même temps. ${ic('stop')} arrête la lecture et revient à la feuille d'édition.</li>
       <li>${ic('save')} ${k('Ctrl')}+${k('S')} <b>enregistre</b> : la première fois on choisit l'emplacement, ensuite le même fichier est réécrit sans fenêtre. Une pastille signale les modifications non enregistrées ; une notification confirme chaque enregistrement.</li>
       <li>${ic('saveas')} ${k('Ctrl')}+${k('Maj')}+${k('S')} <b>enregistre sous…</b> et demande toujours où.</li>
       <li>${ic('undo')} ${ic('redo')} ${k('Ctrl')}+${k('Z')} / ${k('Ctrl')}+${k('Y')} : annuler et rétablir (60 niveaux).</li>

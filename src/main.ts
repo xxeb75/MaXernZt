@@ -1143,6 +1143,7 @@ async function loadProject(f: File, path?: string) {
     restore({ dur: typeof d.duration === 'number' ? d.duration : null, paper: Array.isArray(d.paper) && d.paper.length === 2 ? [d.paper[0], d.paper[1]] : undefined, layers: ls, bg: d.bg ?? bgColor, pk: d.paperTex ?? 'none', pa: typeof d.paperAmt === 'number' ? d.paperAmt : 70, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
     if (d.audio?.data) { try { await setAudio(b64ToBytes(d.audio.data), d.audio.name, d.audio.mime, { vol: d.audio.vol, muted: d.audio.muted, sens: d.audio.sens, src: d.audio.src, keepDuration: true }); } catch (err) { toast('Musique du projet illisible', String(err), 'warn'); clearAudio(); } } else clearAudio();
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); projectPath = path ?? null; projectHandle = null; commit(); dirty = false;
+    if (layers.some(l => l.tl)) playheadTo(0);   // projet animé à la timeline : on l'ouvre sur la pose de l'instant 0 (sinon tous les éléments apparaissent à la fois)
     if (path) $('btn-save').dataset.tip = `Enregistrer (Ctrl+S) — ${path}`;
     status(`Projet « ${projectName} » ouvert (${ls.length} calques).`); toast('Projet ouvert', `${projectName} — ${ls.length} calques`, 'ok');
   } catch (e) { status('Ouverture impossible : ' + (e as Error).message); toast('Ouverture impossible', (e as Error).message, 'err'); }
