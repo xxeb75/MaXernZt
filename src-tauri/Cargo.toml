@@ -1,6 +1,6 @@
 [package]
 name = "maxernzt"
-version = "0.18.2"
+version = "0.18.3"
 description = "Atelier de collage : calques de papier découpé, animation par trajectoires"
 edition = "2021"
 

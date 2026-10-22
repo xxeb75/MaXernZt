@@ -176,7 +176,6 @@ function setSelection(ls: Layer[], primary?: Layer) {
 }
 const select = (l: Layer | null) => setSelection(l ? [l] : [], l ?? undefined);
 /** Place un nœud au premier plan de son groupe. */
-const toTop = (n: Node) => { const p = n.parent!; detach(n); attach(n, p); reflow(); };
 /** Place `n` juste au-dessus de `ref`, dans le même groupe. */
 const placeAbove = (n: Layer, ref: Layer) => { detach(n); attach(n, ref.parent, ref.parent.children.indexOf(ref) + 1); reflow(); };
 function removeLayer(l: Layer) {
@@ -1288,7 +1287,7 @@ cv.addEventListener('pointerdown', e => {
     let collapse: Layer[] | null = null;
     if (!selection.has(hl)) setSelection(ls, hl); else if (selection.size > 1) collapse = ls;
     const rec = recStart();
-    if (!collapse && !rec) toTop(node);
+    // sélectionner ne change jamais l'ordre d'empilement (avancer / reculer : boutons ou touches ] et [)
     drag = { items: mkItems(), sx: w.x, sy: w.y, moved: false, collapse, hit: hl, rec, snap: rec ? null : snapSetup() };
     return;
   }

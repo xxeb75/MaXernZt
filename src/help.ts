@@ -113,6 +113,7 @@ export const HELP: HelpSection[] = [
     id: 'select', title: 'Sélection, déplacement, aimantation', icon: 'select', html: `
     <h4>Sélectionner ${k('V')}</h4>
     <ul>
+      <li>Sélectionner ou déplacer un élément ne change <b>jamais son ordre d'empilement</b> : pour le mettre devant ou derrière, utilise ${ic('front')} ${k(']')} et ${ic('back')} ${k('[')}, ou fais-le glisser dans le panneau des calques.</li>
       <li><b>Clic</b> : un élément. ${k('Maj')}+clic : ajouter ou retirer. <b>Glisser dans le vide</b> : sélection par cadre. ${k('Ctrl')}+${k('A')} : tout.</li>
     </ul>
     <h4>Transformer</h4>
