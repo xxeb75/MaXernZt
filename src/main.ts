@@ -2545,7 +2545,8 @@ if (openParam && /^[\w./-]+\.maxernzt$/.test(openParam) && !openParam.includes('
       if (!r.ok) throw new Error('exemple introuvable (' + r.status + ')');
       await loadProject(new File([await r.text()], baseName(openParam)));
       dirty = false; $('btn-save').classList.remove('dirty');
-      if (anyAnim()) startPlay();   // l'exemple se lance tout de suite ; un clic sur la feuille reprend la main
+      if (audioTrack) toast('Cet exemple a du son', 'Appuie sur ▶ (ou Espace) pour le lancer avec la musique ; « Danser ! » (icône dé) refait une danse.', 'ok', 9000);   // le navigateur interdit de lancer un son sans geste
+      else if (anyAnim()) startPlay();   // l'exemple se lance tout de suite ; un clic sur la feuille reprend la main
       history.replaceState(null, '', location.pathname);   // l'adresse redevient celle de l'appli : un rechargement ne rouvre pas l'exemple
     } catch (e) { toast("Exemple impossible à ouvrir", String(e), 'err'); }
   })();

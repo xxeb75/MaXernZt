@@ -30,7 +30,7 @@ export const HELP: HelpSection[] = [
       <li>${ic('import')} ouvre un sélecteur ; on peut aussi <b>glisser-déposer</b> des fichiers sur la fenêtre ou <b>coller</b> une image avec ${k('Ctrl')}+${k('V')}.</li>
       <li>Les images sont réduites à 1 200 px de côté maximum et arrivent au centre de la feuille.</li>
       <li>Un fichier <b>.maxernzt</b> glissé sur la fenêtre ouvre le projet ; un fichier son (MP3, WAV…) devient la musique du projet.</li>
-      <li>Sur le site, les <b>exemples</b> s'ouvrent directement dans l'application ; ce sont des projets <b>.maxernzt</b> comme les tiens (enregistre-les sous un autre nom avant de les modifier).</li>
+      <li>Sur le site, les <b>exemples</b> s'ouvrent directement dans l'application ; ce sont des projets <b>.maxernzt</b> comme les tiens (enregistre-les sous un autre nom avant de les modifier). L'exemple « Danse sur le son » contient une musique : appuie sur ▶ pour l'entendre, puis sur le dé pour refaire une danse.</li>
       <li>Une image déjà <b>détourée</b> (PNG transparent) est prête à l'emploi ; sinon utilise les outils de détourage.</li>
     </ul>` },
   {
