@@ -299,5 +299,7 @@ export const HELP: HelpSection[] = [
     </table>
     <h4>Polices des lettres découpées</h4>
     <p>Les lettres utilisent les polices installées sous Windows (Impact, Arial Black, Georgia, Times New Roman, Courier New, Palatino Linotype, Rockwell, Segoe Script, Bahnschrift, Trebuchet MS), qui appartiennent à leurs auteurs respectifs.</p>
+    <h4>Mesure d'audience</h4>
+    <p>La version en ligne (site et appli sur GitHub Pages) compte les visites avec GoatCounter, un service anonyme sans cookie. Rien n'est envoyé depuis l'application de bureau, et tes créations ne quittent jamais ton ordinateur.</p>
     <p class="credits-foot">Les noms de projets cités appartiennent à leurs propriétaires. © Sébastien Sonet — tous droits réservés sur la conception de MaXernZt.</p>` },
 ];

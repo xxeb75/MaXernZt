@@ -123,4 +123,6 @@ Tauri (installeur Windows), ONNX natif + DirectML, MobileSAM (clic pour choisir 
 
 ## Crédits
 
+Mesure d'audience : la version en ligne utilise GoatCounter (anonyme, sans cookie) ; rien n'est envoyé depuis l'appli de bureau.
+
 Conception : **Sébastien Sonet**. Développement : Claude (Anthropic), en collaboration avec le concepteur. IA embarquée : U²-Net (u2netp) et MobileSAM (Apache-2.0). Technologies : PixiJS, Tauri, ONNX Runtime Web, mp4-muxer / webm-muxer, Vite, TypeScript. Le détail se trouve dans l'aide (section « Crédits »).
