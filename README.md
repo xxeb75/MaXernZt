@@ -7,7 +7,10 @@ Atelier de collage : chaque morceau de papier est un calque indépendant (dépla
 ```bash
 npm install
 npm run dev      # http://localhost:5173
+npm test         # tests unitaires (Vitest) : groupes, animation, format .maxernzt, audio, zip
 ```
+
+Le format des fichiers projet est décrit dans `docs/FORMAT.md` ; les fichiers de `tests/fixtures/` sont figés et doivent toujours se charger.
 
 ## Application Windows (Tauri)
 
