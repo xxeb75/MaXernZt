@@ -1,0 +1,57 @@
+# Tests : à chaque push hors main (main est couvert par « Publier le site ») et sur les pull requests.
+# Les tests unitaires bloquent. Les scénarios e2e (vrai Chrome) sont lancés à part et ne bloquent pas encore :
+# ils n'ont été vus passer que sur Windows ; on les rendra bloquants une fois stables sur GitHub.
+name: Tests
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Types
+        run: npx tsc --noEmit
+      - name: Tests unitaires
+        run: npm test
+
+  e2e:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    needs: unit
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Modèles d'IA
+        run: node scripts/fetch-models.mjs
+      # Chrome est déjà installé sur ubuntu-latest (playwright : channel « chrome »), rien à télécharger.
+      - name: Scénarios e2e
+        run: npm run test:e2e
+      - name: Scénarios e2e sous la CSP de Tauri
+        run: npm run test:e2e:csp
+      - name: Rapports en cas d'échec
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
+        with:
+          name: e2e-test-results
+          path: test-results
+          if-no-files-found: ignore

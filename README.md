@@ -7,7 +7,11 @@ Atelier de collage : chaque morceau de papier est un calque indépendant (dépla
 ```bash
 npm install
 npm run dev      # http://localhost:5173
+npm test         # tests unitaires (Vitest) : groupes, animation, format .maxernzt, audio, zip
+npm run test:e2e # scénarios dans un vrai Chrome (Playwright) : projet, calques, groupes, animation, audio, export
 ```
+
+Le format des fichiers projet est décrit dans `docs/FORMAT.md` ; les fichiers de `tests/fixtures/` sont figés et doivent toujours se charger.
 
 ## Application Windows (Tauri)
 
@@ -20,6 +24,8 @@ npm run tauri -- dev                  # fenêtre de développement
 Prérequis : Rust (toolchain MSVC), Visual Studio Build Tools, WebView2. Dans l'application, l'enregistrement et les exports utilisent les boîtes de dialogue natives de Windows (plus de fichier vide).
 
 ## Détourage IA (optionnel)
+
+Les trois modèles (détourage et MobileSAM) se téléchargent et se vérifient (SHA-256) d'une seule commande : `node scripts/fetch-models.mjs`. Les explications ci-dessous restent valables pour un placement à la main.
 
 Place un modèle ONNX U²-Net dans `public/models/u2netp.onnx` (≈ 4,6 Mo, licence Apache 2.0, par ex. la version distribuée
 avec le projet `rembg`). Sans lui, « Détourer (IA) » affiche un message ; « Détourer fond uni » fonctionne sans modèle.
@@ -113,7 +119,7 @@ Tauri (installeur Windows), ONNX natif + DirectML, MobileSAM (clic pour choisir 
 - `site/` : la vitrine statique (accueil avec vidéo d'intro, présentation, exemples, tutos dans `site/tutos/`, médias dans `site/media/`). Les exemples ouvrables dans l'appli sont dans `public/examples/*.maxernzt` (lien `app/?open=examples/nom.maxernzt`).
 - La page d'accueil met en avant la musique : bandeau « NOUVEAU : avec du SON », macaron animé sur la vidéo d'intro et section `#son` avec une démo vidéo (`site/media/danse-son.mp4`, musique de synthèse créée pour le site) ; l'exemple correspondant (`public/examples/danse-sur-le-son.maxernzt`) embarque la musique.
 - `npm run build:web` construit `dist-web/` : la vitrine à la racine et l'appli (chemins relatifs, polices libres embarquées, export des calques en .zip) dans `dist-web/app/`. Les modèles d'IA doivent être présents dans `public/models/`.
-- Publication : workflow GitHub `Publier le site` (`.github/workflows/pages.yml`), se lance **à chaque push sur `main`** (ou à la main : Actions > Run workflow), une fois Settings > Pages > Source réglé sur « GitHub Actions ». Il télécharge lui-même les modèles d'IA.
+- Publication : workflow GitHub `Publier le site` (`.github/workflows/pages.yml`), se lance **à chaque push sur `main`** (ou à la main : Actions > Run workflow), une fois Settings > Pages > Source réglé sur « GitHub Actions ». Chaîne : `npm ci` → tests unitaires → modèles d'IA vérifiés (`scripts/fetch-models.mjs`) → compilation → déploiement ; les actions sont épinglées par empreinte de commit. Le workflow `Tests` (`tests.yml`) lance les tests unitaires sur chaque branche et, sans bloquer, les scénarios e2e.
 - Aperçu local : `npm run build:web` puis `python -m http.server 8080 -d dist-web`, et ouvrir `http://localhost:8080/`.
 - Les polices des lettres utilisent celle de Windows si elle est installée, sinon un équivalent libre (Anton, Gelasio, Tinos, Cousine, EB Garamond, Roboto Slab, Caveat, Barlow, Fira Sans, Archivo Black ; licence OFL).
 

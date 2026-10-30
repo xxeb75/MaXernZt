@@ -1,3 +1,4 @@
+import 'pixi.js/unsafe-eval';   // génération de code de Pixi sans eval : permet une CSP sans 'unsafe-eval'
 import { Application, Container, Sprite, Texture, Graphics, BlurFilter, Rectangle } from 'pixi.js';
 import { PAD, makeCanvas, bake, trim, jitter } from './sticker';
 import { cutoutAI, cutoutFlat, modelAvailable } from './cutout';
@@ -8,19 +9,19 @@ import { samAvailable, segment, forget, type SamPoint } from './sam';
 import './fonts.css';
 import { decodeAudio, analyse, waveform, strengthAt, Player, type Analysis } from './audio';
 import { makeZip, type ZipEntry } from './zip';
-import { HELP } from './help';
+import { initTooltips } from './ui/tooltip';
+import { initHelp } from './ui/helpPanel';
+import { initTour } from './ui/tour';
+import { $ } from './ui/dom';
 import { type PaperKind, PAPERS, renderPaperOverlay } from './paper';
 import { SHAPES, makeShape, bankList, bankAdd, bankRemove, bankCanvas, kvGet, kvPut, kvDel, type BankItem } from './bank';
 import { type LayerFx, FX0, FX_PRESETS, fxNeutral, applyLayerFx } from './filters';
 import { type Group, type Leaf, type Node, type TNode, isGroup, leavesOf, detach, attach, prune, topNode, lca, childOf, contains, serialize, buildTree } from './groups';
+import { parseProject, stringifyProject, FORMAT_VERSION, type WrittenLayer } from './projectFile';
+import { type Pt, type Key, type Anim, type KEase, type KF, type TL, type PropId, PROPS, defEase, smooth, cum, pathAt, keysOf, totalOf, ballAfter, keyStarts, evalAnim, evalKF, evalTL, putKeyIn, removeKeyIn, keyTimesOf } from './anim';
 
 let PW = 1080, PH = 1920; // taille de la feuille : 9/16 par défaut (voir les formats dans la barre d'options)
-type Pt = { x: number; y: number };
 
-/** Trajectoire d'un élément ou d'un groupe : points relatifs au centre, durée en secondes. */
-/** Image clé : l'élément s'arrête au point `u` (0-1) du trajet pendant `hold` s, tourne de `spin` degrés et, en option, se chiffonne en boule. */
-interface Key { u: number; hold: number; spin: number; ball?: boolean }  // ball : true = se chiffonne, false = se déchiffonne, absent = garde l'état précédent
-interface Anim { pts: Pt[]; dur: number; mode: 'loop' | 'pingpong'; ease: 'linear' | 'smooth'; follow: boolean; keys?: Key[]; turns?: number }   // turns : tours complets sur soi-même par cycle (négatif = sens inverse)
 interface BallFx { spr: Sprite; sh: Sprite; fold: Sprite; frames: Texture[]; k: number; sz: number }
 /** Accessoire généré (scotch, peinture, punaise…) : type et réglages, pour pouvoir le modifier par double-clic. */
 interface AccSpec { kind: string; p: AccParams }
@@ -30,7 +31,6 @@ interface Layer extends Leaf {
   box: Container; sprite: Sprite; shade: Sprite;
 }
 
-const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = (s: string) => ($('status').textContent = s);
 /** Appli Windows (Tauri) : boîtes de dialogue et écriture de fichiers natives, fiables, sans passer par le navigateur. */
 type TauriApi = { dialog: { save(o: unknown): Promise<string | null>; open(o: unknown): Promise<string | string[] | null> }; fs: { readFile(p: string): Promise<Uint8Array>; writeFile(p: string, d: Uint8Array): Promise<void>; mkdir(p: string, o?: unknown): Promise<void> } };
@@ -134,6 +134,11 @@ const isLocked = (n: Node): boolean => { for (let c: Node | null = n; c; c = c.p
 
 const texOf = (c: HTMLCanvasElement) => Texture.from(c);
 
+/** Détruit la boule de chiffonnage d'un calque, y compris toutes les textures de plis (seule celle affichée serait libérée par la destruction du conteneur). */
+function destroyBall(l: Layer) {
+  if (!l.ball) return;
+  l.ball.frames.forEach(t => t.destroy(true)); l.ball.fold.destroy(); l.ball.spr.destroy({ texture: true }); l.ball.sh.destroy(); l.ball = undefined;
+}
 function refresh(l: Layer) {
   const old = l.sprite.texture;
   l.fxBase = fxNeutral(l.fx) ? undefined : applyLayerFx(l.base, l.fx!);
@@ -144,7 +149,7 @@ function refresh(l: Layer) {
   const cx = l.baked.width / 2, cy = l.baked.height / 2;
   l.box.pivot.set(cx, cy);
   l.sprite.pivot.set(cx, cy); l.sprite.position.set(cx, cy); l.shade.pivot.set(cx, cy);
-  if (l.ball) { l.ball.frames.forEach(t => t.destroy(true)); l.ball.fold.destroy(); l.ball.spr.destroy({ texture: true }); l.ball.sh.destroy(); l.ball = undefined; }
+  destroyBall(l);
   const a = l.shadow / 100;
   l.shade.alpha = 0.55 * a; l.shade.position.set(cx + 6 * a + 2, cy + 9 * a + 2);
   (l.shade.filters as BlurFilter[])[0].strength = 2 + 6 * a;
@@ -181,6 +186,7 @@ const placeAbove = (n: Layer, ref: Layer) => { detach(n); attach(n, ref.parent, 
 function removeLayer(l: Layer) {
   const p = l.parent; detach(l); prune(p); selection.delete(l);
   const i = layers.indexOf(l); if (i >= 0) layers.splice(i, 1);
+  destroyBall(l);
   l.box.destroy({ children: true, texture: true });
   if (selected === l) { const rest = [...selection]; if (rest.length) setSelection(rest); else select(layers[layers.length - 1] ?? null); }
 }
@@ -1075,14 +1081,14 @@ const dataUrls = new WeakMap<HTMLCanvasElement, string>();   // les images de ba
 const urlOf = (c: HTMLCanvasElement) => { let u = dataUrls.get(c); if (!u) dataUrls.set(c, u = c.toDataURL('image/png')); return u; };
 function projectJson(): string {
   const ids = new Map<HTMLCanvasElement, string>(), images: Record<string, string> = {};
-  const out = layers.map(l => {
+  const out = layers.map((l): WrittenLayer => {
     let id = ids.get(l.base);
     if (!id) { id = 'img' + ids.size; ids.set(l.base, id); images[id] = urlOf(l.base); }
     const r = restPose.get(l);   // en lecture ou en pause sur la timeline, on enregistre la pose de repos, pas la pose animée
     return { id: l.id, name: l.name, visible: l.visible, locked: l.locked || undefined, fx: l.fx, anim: l.anim, tl: l.tl, acc: l.acc, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: r?.x ?? l.box.x, y: r?.y ?? l.box.y, rotation: r?.r ?? l.box.rotation, scaleX: r?.sx ?? l.box.scale.x, scaleY: r?.sy ?? l.box.scale.y };
   });
   const au = audioTrack ? (audioTrack.b64 ??= bytesToB64(audioTrack.bytes), { name: audioTrack.name, mime: audioTrack.mime, data: audioTrack.b64, vol: audioTrack.vol, muted: audioTrack.muted, sens: audioTrack.sens, src: audioTrack.src }) : undefined;
-  return JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, paperTex: paperKind, paperAmt, tree: serialize(root), duration: tlDurManual, layers: out, images, audio: au });
+  return stringifyProject({ paper: [PW, PH], bg: bgColor, paperTex: paperKind, paperAmt, tree: serialize(root), duration: tlDurManual, layers: out, images, audio: au });
 }
 async function saveProject(asNew = false) {
   stopPlay();
@@ -1134,15 +1140,13 @@ const decode = (url: string) => new Promise<HTMLCanvasElement>((res, rej) => {
 async function loadProject(f: File, path?: string) {
   stopPlay();
   try {
-    const txt = await f.text();
-    if (!txt.trim()) throw new Error('le fichier est vide (enregistrement interrompu)');
-    const d = JSON.parse(txt);
-    if (d.format !== 'maxernzt' || !Array.isArray(d.layers)) throw new Error('fichier non reconnu');
+    const d = parseProject(await f.text());   // valide tout avant de toucher à la feuille : un fichier invalide ne la modifie pas
+    if (d.newer) toast('Projet plus récent', `Ce fichier est au format ${d.version} ; cette version lit le format ${FORMAT_VERSION}. Certains éléments peuvent manquer.`, 'warn');
     const imgs = new Map<string, HTMLCanvasElement>();
-    for (const [id, url] of Object.entries<string>(d.images)) imgs.set(id, await decode(url));
-    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, locked: !!l.locked, fx: l.fx, anim: l.anim, tl: l.tl, acc: l.acc, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
+    for (const [id, url] of Object.entries(d.images)) imgs.set(id, await decode(url));
+    const ls: LState[] = d.layers.map(({ image, ...l }) => ({ ...l, base: imgs.get(image)! }));
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
-    restore({ dur: typeof d.duration === 'number' ? d.duration : null, paper: Array.isArray(d.paper) && d.paper.length === 2 ? [d.paper[0], d.paper[1]] : undefined, layers: ls, bg: d.bg ?? bgColor, pk: d.paperTex ?? 'none', pa: typeof d.paperAmt === 'number' ? d.paperAmt : 70, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
+    restore({ dur: d.duration, paper: d.paper, layers: ls, bg: d.bg ?? bgColor, pk: d.paperTex as PaperKind, pa: d.paperAmt, tree: d.tree, sel: [] });
     if (d.audio?.data) { try { await setAudio(b64ToBytes(d.audio.data), d.audio.name, d.audio.mime, { vol: d.audio.vol, muted: d.audio.muted, sens: d.audio.sens, src: d.audio.src, keepDuration: true }); } catch (err) { toast('Musique du projet illisible', String(err), 'warn'); clearAudio(); } } else clearAudio();
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); projectPath = path ?? null; projectHandle = null; commit(); dirty = false;
     if (layers.some(l => l.tl)) playheadTo(0);   // projet animé à la timeline : on l'ouvre sur la pose de l'instant 0 (sinon tous les éléments apparaissent à la fois)
@@ -1543,52 +1547,6 @@ const animOf = (n: Node): Anim | undefined => (isGroup(n) ? (n.anim as Anim | un
 function setAnim(n: Node, a: Anim | undefined) { if (isGroup(n)) n.anim = a; else (n as Layer).anim = a; }
 const animJson = (a?: Anim) => (a ? { points: a.pts.map(p => [Math.round(p.x), Math.round(p.y)]), duration: a.dur, mode: a.mode, ease: a.ease, follow: a.follow, turns: a.turns ?? 0, keys: keysOf(a).map(k => ({ progress: +k.u.toFixed(4), hold: k.hold, spin: k.spin, crumple: ballAfter(a, keysOf(a).indexOf(k)) })) } : null);
 
-const lenCache = new WeakMap<Anim, number[]>();
-function cum(a: Anim): number[] {
-  let c = lenCache.get(a);
-  if (!c) { c = [0]; for (let i = 1; i < a.pts.length; i++) c.push(c[i - 1] + Math.hypot(a.pts[i].x - a.pts[i - 1].x, a.pts[i].y - a.pts[i - 1].y)); lenCache.set(a, c); }
-  return c;
-}
-/** Position (relative) et cap au point d'abscisse curviligne `u` (0-1). */
-function pathAt(a: Anim, u: number) {
-  const c = cum(a), d = Math.min(Math.max(u, 0), 1) * (c[c.length - 1] || 1);
-  let i = 1; while (i < c.length - 1 && c[i] < d) i++;
-  const t = (d - c[i - 1]) / ((c[i] - c[i - 1]) || 1), p0 = a.pts[i - 1], p1 = a.pts[i];
-  return { x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t, ang: Math.atan2(p1.y - p0.y, p1.x - p0.x) };
-}
-const smooth = (t: number) => t * t * (3 - 2 * t);
-const keysOf = (a: Anim): Key[] => a.keys ?? [];
-const totalOf = (a: Anim) => a.dur + keysOf(a).reduce((t, k) => t + k.hold, 0);
-/** Début de chaque pause sur la ligne de temps (s). */
-/** La feuille est-elle chiffonnée après l'image clé `i` ? */
-function ballAfter(a: Anim, i: number): boolean { let st = false; keysOf(a).slice(0, i + 1).forEach(k => { if (k.ball !== undefined) st = k.ball; }); return st; }
-function keyStarts(a: Anim): number[] {
-  let t = 0, cu = 0;
-  return keysOf(a).map(k => { t += (k.u - cu) * a.dur; cu = k.u; const st = t; t += k.hold; return st; });
-}
-/** État à l'instant `time` : avancement `u` sur le trajet, rotation ajoutée (degrés) et taux de chiffonnage (0-1). */
-function evalAnim(a: Anim, time: number) {
-  const ks = keysOf(a), tot = totalOf(a);
-  let T = time % (a.mode === 'loop' ? tot : tot * 2), fwd = true;
-  if (a.mode === 'pingpong' && T > tot) { T = 2 * tot - T; fwd = false; }
-  let t = 0, cu = 0, spin = 0, b0 = 0, u = 1, rot = 0, ball = 0, found = false;
-  const seg = (to: number) => {
-    const d = (to - cu) * a.dur;
-    if (!found && T < t + d) { const q = d > 0 ? (T - t) / d : 1; u = cu + (a.ease === 'smooth' ? smooth(q) : q) * (to - cu); rot = spin; ball = b0; found = true; }
-    t += d; cu = to;
-  };
-  for (const k of ks) {
-    seg(k.u);
-    const tgt = k.ball === undefined ? b0 : k.ball ? 1 : 0;
-    if (!found && T < t + k.hold) { const q = k.hold > 0 ? smooth((T - t) / k.hold) : 1; u = k.u; rot = spin + q * k.spin; ball = b0 + q * (tgt - b0); found = true; }
-    t += k.hold; spin += k.spin; b0 = tgt;
-  }
-  seg(1);
-  if (!found) { u = 1; rot = spin; ball = b0; }
-  const p = pathAt(a, u);
-  return { x: p.x, y: p.y, u, ang: fwd ? p.ang : p.ang + Math.PI, rot: rot + (a.turns ?? 0) * 360 * (T / tot), ball };   // rotation continue répartie sur tout le cycle
-}
-
 // ---- chiffonnage : le papier se réduit et se fond dans une boule faite de ses propres couleurs, à la taille proportionnelle de l'élément
 const prng = (seed: number) => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
 function opaqueArea(c: HTMLCanvasElement): number {
@@ -1773,56 +1731,13 @@ function setCrumple(l: Layer, b: number) {
 
 // ---- timeline : images clés par propriété (position, rotation, taille, chiffonnage, visibilité).
 // Les valeurs sont relatives à la pose de repos ; avant la première image clé on garde sa valeur, après la dernière aussi.
-type KEase = 'linear' | 'smooth' | 'hold';
-interface KF { t: number; v: number; w?: number; e?: KEase }   // w : seconde valeur (y de la position) ; e : interpolation vers l'image clé suivante
-interface TL { pos?: KF[]; rot?: KF[]; scale?: KF[]; crumple?: KF[]; vis?: KF[] }
-type PropId = 'pos' | 'rot' | 'scale' | 'crumple' | 'vis';
-const PROPS: { id: PropId; name: string; icon: string; dv: number; dw: number }[] = [
-  { id: 'pos', name: 'Position', icon: 'move', dv: 0, dw: 0 }, { id: 'rot', name: 'Rotation', icon: 'spin', dv: 0, dw: 0 },
-  { id: 'scale', name: 'Taille', icon: 'fit', dv: 1, dw: 0 }, { id: 'crumple', name: 'Chiffonnage', icon: 'ball', dv: 0, dw: 0 },
-  { id: 'vis', name: 'Visibilité', icon: 'eye', dv: 1, dw: 0 },
-];
-const defEase = (p: PropId): KEase => (p === 'vis' ? 'hold' : 'smooth');
 const tlOf = (n: Node): TL | undefined => (isGroup(n) ? (n.tl as TL | undefined) : (n as Layer).tl);
 function setTl(n: Node, tl: TL | undefined) { if (isGroup(n)) n.tl = tl; else (n as Layer).tl = tl; }
 
-function evalKF(k: KF[] | undefined, t: number, dv: number, dw = 0): { v: number; w: number } {
-  if (!k?.length) return { v: dv, w: dw };
-  const n = k.length;
-  if (t <= k[0].t) return { v: k[0].v, w: k[0].w ?? dw };
-  if (t >= k[n - 1].t) return { v: k[n - 1].v, w: k[n - 1].w ?? dw };
-  let i = 0; while (i < n - 2 && k[i + 1].t <= t) i++;
-  const a = k[i], b = k[i + 1], e = a.e ?? 'smooth';
-  let f = (t - a.t) / ((b.t - a.t) || 1);
-  if (e === 'hold') f = 0; else if (e === 'smooth') f = smooth(f);
-  const aw = a.w ?? dw, bw = b.w ?? dw;
-  return { v: a.v + (b.v - a.v) * f, w: aw + (bw - aw) * f };
-}
-function evalTL(tl: TL | undefined, t: number) {
-  const p = evalKF(tl?.pos, t, 0, 0);
-  return { x: p.v, y: p.w, rot: evalKF(tl?.rot, t, 0).v, scale: evalKF(tl?.scale, t, 1).v, crumple: evalKF(tl?.crumple, t, 0).v, vis: evalKF(tl?.vis, t, 1).v };
-}
-/** Pose (ou met à jour) l'image clé de `prop` à l'instant t. La première image clé posée après 0 s ajoute un départ à la valeur de repos. */
-function putKey(n: Node, prop: PropId, t: number, v: number, w?: number, e?: KEase) {
-  const tl: TL = { ...(tlOf(n) ?? {}) }, list = [...(tl[prop] ?? [])];
-  const i = list.findIndex(k => Math.abs(k.t - t) < 0.02);
-  if (i >= 0) list[i] = { ...list[i], v, ...(w !== undefined ? { w } : {}) };
-  else {
-    if (!list.length && t > 0.05) { const d = PROPS.find(q => q.id === prop)!; list.push({ t: 0, v: d.dv, ...(prop === 'pos' ? { w: 0 } : {}), e: defEase(prop) }); }
-    list.push({ t, v, ...(w !== undefined ? { w } : {}), e: e ?? defEase(prop) });
-  }
-  list.sort((a, b) => a.t - b.t); tl[prop] = list; setTl(n, tl);
-}
-function removeKey(n: Node, prop: PropId, t: number) {
-  const tl: TL = { ...(tlOf(n) ?? {}) }, list = (tl[prop] ?? []).filter(k => Math.abs(k.t - t) > 1e-6);
-  if (list.length) tl[prop] = list; else delete tl[prop];
-  setTl(n, Object.keys(tl).length ? tl : undefined);
-}
-function nodeKeyTimes(n: Node): number[] {
-  const tl = tlOf(n), out = new Set<number>();
-  if (tl) for (const p of PROPS) for (const k of tl[p.id] ?? []) out.add(k.t);
-  return [...out].sort((a, b) => a - b);
-}
+/** Pose (ou met à jour) l'image clé de `prop` à l'instant t (voir `putKeyIn`). */
+function putKey(n: Node, prop: PropId, t: number, v: number, w?: number, e?: KEase) { setTl(n, putKeyIn(tlOf(n), prop, t, v, w, e)); }
+function removeKey(n: Node, prop: PropId, t: number) { setTl(n, removeKeyIn(tlOf(n), prop, t)); }
+const nodeKeyTimes = (n: Node): number[] => keyTimesOf(tlOf(n));
 let tlDurManual: number | null = null;
 function lastKeyTime(): number {
   let m = 0;
@@ -2583,143 +2498,9 @@ addEventListener('beforeunload', () => { void autoSave(); });
   } catch { /* stockage indisponible */ }
 })();
 
-// ---- infobulles : un seul élément au niveau de la page, donc toujours au-dessus des panneaux (jamais coupé ni recouvert)
-{
-  const tip = document.createElement('div'); tip.id = 'tip'; tip.setAttribute('role', 'tooltip'); document.body.appendChild(tip);
-  let cur: HTMLElement | null = null, timer = 0;
-  const hide = () => { clearTimeout(timer); cur = null; tip.classList.remove('on'); };
-  const show = (el: HTMLElement) => {
-    const txt = el.dataset.tip; if (!txt || !el.isConnected) return;
-    tip.textContent = txt; tip.style.left = '0px'; tip.style.top = '0px';
-    const r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight, g = 8, pos = el.dataset.pos ?? 'bottom';
-    let x = r.left + r.width / 2 - w / 2, y = r.bottom + g;
-    if (pos === 'top') y = r.top - h - g;
-    else if (pos === 'right') { x = r.right + g; y = r.top + r.height / 2 - h / 2; }
-    else if (pos === 'bottom-start') x = r.left;
-    else if (pos === 'bottom-left') x = r.right - w;
-    if (pos !== 'right' && pos !== 'top' && y + h > innerHeight - 4) y = r.top - h - g;   // plus de place dessous : au-dessus
-    if (pos === 'top' && y < 4) y = r.bottom + g;                                         // plus de place dessus : dessous
-    tip.style.left = Math.max(4, Math.min(x, innerWidth - w - 4)) + 'px'; tip.style.top = Math.max(4, Math.min(y, innerHeight - h - 4)) + 'px';
-    tip.classList.add('on');
-  };
-  addEventListener('pointerover', e => {
-    const el = (e.target as HTMLElement).closest?.('[data-tip]') as HTMLElement | null;
-    if (el === cur) return;
-    hide(); if (!el) return;
-    cur = el; timer = window.setTimeout(() => cur && show(cur), 250);
-  });
-  addEventListener('pointerdown', hide, true); addEventListener('wheel', hide, { passive: true }); addEventListener('keydown', hide);
-  document.addEventListener('pointerleave', hide);
-}
-
-
-// ---- aide : sections à gauche, contenu à droite, recherche par mot ; F1 ou bouton ?
-{
-  const el = $('help'), nav = $('help-nav'), body = $('help-body'), q = $<HTMLInputElement>('help-q');
-  let cur = HELP[0].id;
-  const textOf = (s: { title: string; html: string }) => (s.title + ' ' + s.html.replace(/<[^>]+>/g, ' ')).toLowerCase();
-  const norm = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const matches = () => { const w = norm(q.value.trim()); return w ? HELP.filter(s => norm(textOf(s)).includes(w)) : HELP; };
-  const show = (id: string) => {
-    cur = id; const s = HELP.find(x => x.id === id)!;
-    body.innerHTML = `<h2><svg class="ic"><use href="#i-${s.icon}"/></svg>${s.title}</h2>` + s.html; body.scrollTop = 0;
-    const w = q.value.trim();
-    if (w) {   // met le mot cherché en évidence dans le texte (hors balises)
-      const re = new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-      const walk = (n: Element) => {
-        for (const c of [...n.childNodes]) {
-          if (c.nodeType === 3 && c.textContent && re.test(c.textContent)) { re.lastIndex = 0; const sp = document.createElement('span'); sp.innerHTML = c.textContent.replace(/[&<]/g, m => (m === '&' ? '&amp;' : '&lt;')).replace(re, m => `<mark class="hl">${m}</mark>`); c.replaceWith(...sp.childNodes); }
-          else if (c.nodeType === 1 && (c as Element).tagName !== "svg") walk(c as Element);
-        }
-      };
-      walk(body);
-    }
-    nav.querySelectorAll('.hn').forEach(b => b.classList.toggle('on', (b as HTMLElement).dataset.id === id));
-  };
-  const renderNav = () => {
-    const list = matches(); nav.innerHTML = '';
-    if (!list.length) { nav.innerHTML = '<div class="none">Aucune section ne contient ce mot.</div>'; body.innerHTML = ''; return; }
-    for (const s of list) {
-      const b = document.createElement('button'); b.className = 'hn'; b.dataset.id = s.id;
-      b.innerHTML = `<svg class="ic"><use href="#i-${s.icon}"/></svg><span></span>`; (b.querySelector('span') as HTMLElement).textContent = s.title;
-      b.onclick = () => show(s.id); nav.appendChild(b);
-    }
-    show(list.some(s => s.id === cur) ? cur : list[0].id);
-  };
-  const open = (id?: string) => { if (id) cur = id; q.value = ''; el.classList.add('open'); renderNav(); };
-  const close = () => el.classList.remove('open');
-  q.oninput = renderNav;
-  $('btn-help').onclick = () => (el.classList.contains('open') ? close() : open());
-  $('help-close').onclick = close;
-  $('help-tour').onclick = () => { close(); window.dispatchEvent(new Event('maxernzt-tour')); };
-  el.addEventListener('pointerdown', e => { if (e.target === el) close(); });
-  addEventListener('keydown', e => {
-    if (e.key === 'F1') { e.preventDefault(); e.stopPropagation(); if (el.classList.contains('open')) close(); else open(); return; }
-    if (e.key === 'Escape' && el.classList.contains('open')) { e.stopPropagation(); close(); }
-  }, true);
-}
-
-// ---- visite guidée : s'ouvre au premier lancement, ensuite avec « ? » ou F1
-{
-  interface Step { sel: string | null; title: string; text: string }
-  const STEPS: Step[] = [
-    { sel: null, title: 'Bienvenue dans MaXernZt', text: "Compose des <b>collages en papier découpé</b> puis <b>anime-les</b> : chaque élément reste indépendant. Cette visite dure une minute ; tu peux la quitter à tout moment. Le bouton <b>?</b> (ou F1) ouvre l'<b>aide complète</b>, d'où l'on relance cette visite." },
-    { sel: '#btn-import', title: 'Importer des images', text: "Clique ici, <b>glisse-dépose</b> des fichiers sur la feuille, ou colle une image avec <b>Ctrl+V</b>. Un projet <b>.maxernzt</b> glissé sur la fenêtre s'ouvre aussi." },
-    { sel: '#btn-ai', title: 'Détourer', text: "<b>A</b> détoure automatiquement l'objet principal (IA locale, sans internet). <b>C</b> détoure au clic : clique ce que tu veux garder. La gomme <b>B</b> efface un fond uni." },
-    { sel: '#btn-scissors', title: 'Ciseaux et déchirure', text: "<b>X</b> : trace une découpe aux ciseaux. <b>R</b> : déchire une feuille en suivant ton geste. Les contours deviennent irréguliers, comme du vrai papier." },
-    { sel: '#btn-text', title: 'Lettres, accessoires, banque', text: "<b>T</b> compose des mots en lettres découpées. <b>E</b> ajoute scotch, peinture, punaises, trombones. L'album ouvre une <b>banque</b> de formes prêtes à l'emploi et ta propre banque d'images détourées." },
-    { sel: '#layers', title: 'Éléments, groupes et verrous', text: "Un clic sélectionne, <b>Maj/Ctrl</b> ajoute. Glisse pour réordonner ou regrouper (<b>Ctrl+G</b>). L'œil masque, le <b>cadenas</b> verrouille, la copie duplique. Un groupe se sélectionne ici, pas sur la feuille." },
-    { sel: '#opts', title: 'Réglages de la sélection', text: "Contour, déchirure, ombre ; <b>effets de couleur</b> (palette), verrou, suppression ; format de la feuille, <b>texture du papier</b>, couleur de fond, <b>aimantation</b> (Alt pour l'ignorer le temps d'un geste)." },
-    { sel: '#btn-path', title: 'Animer : la trajectoire', text: "<b>P</b> : sélectionne un élément puis dessine son chemin à partir de lui. ▶ ou <b>Espace</b> lance la lecture, <b>Échap</b> l'arrête. La barre du bas règle durée, boucle, rotation et pauses." },
-    { sel: '#timeline', title: 'La timeline', text: "Une piste par propriété : position, rotation, taille, chiffonnage, visibilité. Le <b>point rouge</b> enregistre tes gestes en images clés ; les <b>étincelles</b> posent des effets tout faits ; les flèches sautent d'une clé à l'autre. <b>Tire le haut du panneau</b> pour l'agrandir." },
-    { sel: '#btn-video', title: 'Exporter et enregistrer', text: "La pellicule exporte la <b>vidéo</b> (MP4), les autres boutons l'image ou les calques. <b>Ctrl+S</b> enregistre (Ctrl+Maj+S : enregistrer sous) ; un brouillon est aussi gardé automatiquement et proposé au prochain lancement. Bonne création !" },
-  ];
-  const tourEl = $('tour'), hole = $('tour-hole'), card = $('tour-card');
-  let i = 0;
-  const place = () => {
-    const s = STEPS[i], el = s.sel ? (document.querySelector(s.sel) as HTMLElement | null) : null;
-    const W = innerWidth, H = innerHeight, cw = card.offsetWidth, ch = card.offsetHeight;
-    if (el) {
-      const r = el.getBoundingClientRect(), pad = 6;
-      hole.style.cssText = `left:${r.left - pad}px;top:${r.top - pad}px;width:${r.width + pad * 2}px;height:${r.height + pad * 2}px`;
-      let x = r.right + 18, y = r.top + r.height / 2 - ch / 2;                         // à droite de l'élément
-      if (x + cw > W - 12) { x = r.left + r.width / 2 - cw / 2; y = r.bottom + 18; }   // sinon dessous
-      if (y + ch > H - 12) y = r.top - ch - 18;                                        // sinon dessus
-      if (y < 12) y = Math.max(12, Math.min(H - ch - 12, r.top + 12));
-      card.style.left = Math.max(12, Math.min(x, W - cw - 12)) + 'px'; card.style.top = Math.max(12, Math.min(y, H - ch - 12)) + 'px';
-    } else {
-      hole.style.cssText = `left:${W / 2}px;top:${H / 2}px;width:0;height:0`;
-      card.style.left = (W - cw) / 2 + 'px'; card.style.top = (H - ch) / 2 + 'px';
-    }
-  };
-  const render = () => {
-    const s = STEPS[i];
-    $('tour-step').textContent = `Étape ${i + 1} sur ${STEPS.length}`; $('tour-title').textContent = s.title; $('tour-text').innerHTML = s.text;
-    $('tour-next').textContent = i === STEPS.length - 1 ? 'Terminer' : 'Suivant';
-    ($('tour-prev') as HTMLButtonElement).style.visibility = i ? 'visible' : 'hidden';
-    place();
-  };
-  const close = () => {
-    tourEl.classList.remove('open');
-    try { if ($<HTMLInputElement>('tour-never').checked) localStorage.setItem('maxernzt.tour', '1'); else localStorage.removeItem('maxernzt.tour'); } catch { /* ignoré */ }
-  };
-  const open = () => {
-    i = 0; let never = false; try { never = localStorage.getItem('maxernzt.tour') === '1'; } catch { /* ignoré */ }
-    $<HTMLInputElement>('tour-never').checked = never; tourEl.classList.add('open'); render();
-  };
-  $('tour-next').onclick = () => { if (i < STEPS.length - 1) { i++; render(); } else close(); };
-  $('tour-prev').onclick = () => { if (i) { i--; render(); } };
-  $('tour-close').onclick = close;
-  addEventListener('maxernzt-tour', open);
-  addEventListener('resize', () => tourEl.classList.contains('open') && place());
-  addEventListener('keydown', e => {
-    if (!tourEl.classList.contains('open')) return;
-    if (e.key === 'Escape') { e.stopPropagation(); close(); } else if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); $('tour-next').click(); } else if (e.key === 'ArrowLeft') { e.preventDefault(); $('tour-prev').click(); }
-  }, true);
-  // premier lancement (ou tant que « ne plus afficher » n'est pas coché), sans gêner la restauration d'un brouillon
-  let seen = false; try { seen = localStorage.getItem('maxernzt.tour') === '1'; } catch { /* ignoré */ }
-  if (!seen && !new URLSearchParams(location.search).has('open')) setTimeout(async () => { const a = await kvGet('autosave').catch(() => undefined); if (!a) open(); }, 600);
-}
+initTooltips();
+initHelp();
+initTour();
 (window as any).__app = { projectJson, autoSave, app, loadProject, saveProject, addLayer, layers, replaceBase, cutoutFlat, get selected() { return selected; } };
 commit();
 status('Glisse des images ici, ou colle-les (Ctrl+V).');

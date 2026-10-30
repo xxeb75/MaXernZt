@@ -6,3 +6,6 @@ src-tauri/gen
 release
 *.exe
 dist-web
+test-results
+playwright-report
+.csp-dist

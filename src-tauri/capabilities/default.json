@@ -1,29 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Enregistrement et export de fichiers vers les emplacements choisis par l'utilisateur",
+  "description": "Ouvrir et enregistrer uniquement les fichiers et dossiers choisis par l'utilisateur dans les fenêtres du système (le plugin dialog ajoute chaque choix à la portée du plugin fs)",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
-    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
     "fs:allow-read-file",
-    {
-      "identifier": "fs:allow-write-file",
-      "allow": [
-        {
-          "path": "**"
-        }
-      ]
-    },
-    {
-      "identifier": "fs:allow-mkdir",
-      "allow": [
-        {
-          "path": "**"
-        }
-      ]
-    }
+    "fs:allow-write-file",
+    "fs:allow-mkdir"
   ]
 }

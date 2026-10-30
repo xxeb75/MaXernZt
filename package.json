@@ -8,7 +8,10 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:web": "tsc && vite build --outDir dist-web/app --emptyOutDir && node scripts/build-site.mjs"
+    "build:web": "tsc && vite build --outDir dist-web/app --emptyOutDir && node scripts/build-site.mjs",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:csp": "node e2e/run-csp.mjs"
   },
   "dependencies": {
     "mp4-muxer": "^5.2.2",
@@ -27,8 +30,10 @@
     "@fontsource/gelasio": "^5.3.0",
     "@fontsource/roboto-slab": "^5.3.0",
     "@fontsource/tinos": "^5.3.0",
+    "@playwright/test": "^1.64.1",
     "@tauri-apps/cli": "^2.12.3",
     "typescript": "^7.0.2",
-    "vite": "^8.3.4"
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
   }
 }
