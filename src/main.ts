@@ -8,7 +8,10 @@ import { samAvailable, segment, forget, type SamPoint } from './sam';
 import './fonts.css';
 import { decodeAudio, analyse, waveform, strengthAt, Player, type Analysis } from './audio';
 import { makeZip, type ZipEntry } from './zip';
-import { HELP } from './help';
+import { initTooltips } from './ui/tooltip';
+import { initHelp } from './ui/helpPanel';
+import { initTour } from './ui/tour';
+import { $ } from './ui/dom';
 import { type PaperKind, PAPERS, renderPaperOverlay } from './paper';
 import { SHAPES, makeShape, bankList, bankAdd, bankRemove, bankCanvas, kvGet, kvPut, kvDel, type BankItem } from './bank';
 import { type LayerFx, FX0, FX_PRESETS, fxNeutral, applyLayerFx } from './filters';
@@ -27,7 +30,6 @@ interface Layer extends Leaf {
   box: Container; sprite: Sprite; shade: Sprite;
 }
 
-const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = (s: string) => ($('status').textContent = s);
 /** Appli Windows (Tauri) : boîtes de dialogue et écriture de fichiers natives, fiables, sans passer par le navigateur. */
 type TauriApi = { dialog: { save(o: unknown): Promise<string | null>; open(o: unknown): Promise<string | string[] | null> }; fs: { readFile(p: string): Promise<Uint8Array>; writeFile(p: string, d: Uint8Array): Promise<void>; mkdir(p: string, o?: unknown): Promise<void> } };
@@ -2495,143 +2497,9 @@ addEventListener('beforeunload', () => { void autoSave(); });
   } catch { /* stockage indisponible */ }
 })();
 
-// ---- infobulles : un seul élément au niveau de la page, donc toujours au-dessus des panneaux (jamais coupé ni recouvert)
-{
-  const tip = document.createElement('div'); tip.id = 'tip'; tip.setAttribute('role', 'tooltip'); document.body.appendChild(tip);
-  let cur: HTMLElement | null = null, timer = 0;
-  const hide = () => { clearTimeout(timer); cur = null; tip.classList.remove('on'); };
-  const show = (el: HTMLElement) => {
-    const txt = el.dataset.tip; if (!txt || !el.isConnected) return;
-    tip.textContent = txt; tip.style.left = '0px'; tip.style.top = '0px';
-    const r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight, g = 8, pos = el.dataset.pos ?? 'bottom';
-    let x = r.left + r.width / 2 - w / 2, y = r.bottom + g;
-    if (pos === 'top') y = r.top - h - g;
-    else if (pos === 'right') { x = r.right + g; y = r.top + r.height / 2 - h / 2; }
-    else if (pos === 'bottom-start') x = r.left;
-    else if (pos === 'bottom-left') x = r.right - w;
-    if (pos !== 'right' && pos !== 'top' && y + h > innerHeight - 4) y = r.top - h - g;   // plus de place dessous : au-dessus
-    if (pos === 'top' && y < 4) y = r.bottom + g;                                         // plus de place dessus : dessous
-    tip.style.left = Math.max(4, Math.min(x, innerWidth - w - 4)) + 'px'; tip.style.top = Math.max(4, Math.min(y, innerHeight - h - 4)) + 'px';
-    tip.classList.add('on');
-  };
-  addEventListener('pointerover', e => {
-    const el = (e.target as HTMLElement).closest?.('[data-tip]') as HTMLElement | null;
-    if (el === cur) return;
-    hide(); if (!el) return;
-    cur = el; timer = window.setTimeout(() => cur && show(cur), 250);
-  });
-  addEventListener('pointerdown', hide, true); addEventListener('wheel', hide, { passive: true }); addEventListener('keydown', hide);
-  document.addEventListener('pointerleave', hide);
-}
-
-
-// ---- aide : sections à gauche, contenu à droite, recherche par mot ; F1 ou bouton ?
-{
-  const el = $('help'), nav = $('help-nav'), body = $('help-body'), q = $<HTMLInputElement>('help-q');
-  let cur = HELP[0].id;
-  const textOf = (s: { title: string; html: string }) => (s.title + ' ' + s.html.replace(/<[^>]+>/g, ' ')).toLowerCase();
-  const norm = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const matches = () => { const w = norm(q.value.trim()); return w ? HELP.filter(s => norm(textOf(s)).includes(w)) : HELP; };
-  const show = (id: string) => {
-    cur = id; const s = HELP.find(x => x.id === id)!;
-    body.innerHTML = `<h2><svg class="ic"><use href="#i-${s.icon}"/></svg>${s.title}</h2>` + s.html; body.scrollTop = 0;
-    const w = q.value.trim();
-    if (w) {   // met le mot cherché en évidence dans le texte (hors balises)
-      const re = new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-      const walk = (n: Element) => {
-        for (const c of [...n.childNodes]) {
-          if (c.nodeType === 3 && c.textContent && re.test(c.textContent)) { re.lastIndex = 0; const sp = document.createElement('span'); sp.innerHTML = c.textContent.replace(/[&<]/g, m => (m === '&' ? '&amp;' : '&lt;')).replace(re, m => `<mark class="hl">${m}</mark>`); c.replaceWith(...sp.childNodes); }
-          else if (c.nodeType === 1 && (c as Element).tagName !== "svg") walk(c as Element);
-        }
-      };
-      walk(body);
-    }
-    nav.querySelectorAll('.hn').forEach(b => b.classList.toggle('on', (b as HTMLElement).dataset.id === id));
-  };
-  const renderNav = () => {
-    const list = matches(); nav.innerHTML = '';
-    if (!list.length) { nav.innerHTML = '<div class="none">Aucune section ne contient ce mot.</div>'; body.innerHTML = ''; return; }
-    for (const s of list) {
-      const b = document.createElement('button'); b.className = 'hn'; b.dataset.id = s.id;
-      b.innerHTML = `<svg class="ic"><use href="#i-${s.icon}"/></svg><span></span>`; (b.querySelector('span') as HTMLElement).textContent = s.title;
-      b.onclick = () => show(s.id); nav.appendChild(b);
-    }
-    show(list.some(s => s.id === cur) ? cur : list[0].id);
-  };
-  const open = (id?: string) => { if (id) cur = id; q.value = ''; el.classList.add('open'); renderNav(); };
-  const close = () => el.classList.remove('open');
-  q.oninput = renderNav;
-  $('btn-help').onclick = () => (el.classList.contains('open') ? close() : open());
-  $('help-close').onclick = close;
-  $('help-tour').onclick = () => { close(); window.dispatchEvent(new Event('maxernzt-tour')); };
-  el.addEventListener('pointerdown', e => { if (e.target === el) close(); });
-  addEventListener('keydown', e => {
-    if (e.key === 'F1') { e.preventDefault(); e.stopPropagation(); if (el.classList.contains('open')) close(); else open(); return; }
-    if (e.key === 'Escape' && el.classList.contains('open')) { e.stopPropagation(); close(); }
-  }, true);
-}
-
-// ---- visite guidée : s'ouvre au premier lancement, ensuite avec « ? » ou F1
-{
-  interface Step { sel: string | null; title: string; text: string }
-  const STEPS: Step[] = [
-    { sel: null, title: 'Bienvenue dans MaXernZt', text: "Compose des <b>collages en papier découpé</b> puis <b>anime-les</b> : chaque élément reste indépendant. Cette visite dure une minute ; tu peux la quitter à tout moment. Le bouton <b>?</b> (ou F1) ouvre l'<b>aide complète</b>, d'où l'on relance cette visite." },
-    { sel: '#btn-import', title: 'Importer des images', text: "Clique ici, <b>glisse-dépose</b> des fichiers sur la feuille, ou colle une image avec <b>Ctrl+V</b>. Un projet <b>.maxernzt</b> glissé sur la fenêtre s'ouvre aussi." },
-    { sel: '#btn-ai', title: 'Détourer', text: "<b>A</b> détoure automatiquement l'objet principal (IA locale, sans internet). <b>C</b> détoure au clic : clique ce que tu veux garder. La gomme <b>B</b> efface un fond uni." },
-    { sel: '#btn-scissors', title: 'Ciseaux et déchirure', text: "<b>X</b> : trace une découpe aux ciseaux. <b>R</b> : déchire une feuille en suivant ton geste. Les contours deviennent irréguliers, comme du vrai papier." },
-    { sel: '#btn-text', title: 'Lettres, accessoires, banque', text: "<b>T</b> compose des mots en lettres découpées. <b>E</b> ajoute scotch, peinture, punaises, trombones. L'album ouvre une <b>banque</b> de formes prêtes à l'emploi et ta propre banque d'images détourées." },
-    { sel: '#layers', title: 'Éléments, groupes et verrous', text: "Un clic sélectionne, <b>Maj/Ctrl</b> ajoute. Glisse pour réordonner ou regrouper (<b>Ctrl+G</b>). L'œil masque, le <b>cadenas</b> verrouille, la copie duplique. Un groupe se sélectionne ici, pas sur la feuille." },
-    { sel: '#opts', title: 'Réglages de la sélection', text: "Contour, déchirure, ombre ; <b>effets de couleur</b> (palette), verrou, suppression ; format de la feuille, <b>texture du papier</b>, couleur de fond, <b>aimantation</b> (Alt pour l'ignorer le temps d'un geste)." },
-    { sel: '#btn-path', title: 'Animer : la trajectoire', text: "<b>P</b> : sélectionne un élément puis dessine son chemin à partir de lui. ▶ ou <b>Espace</b> lance la lecture, <b>Échap</b> l'arrête. La barre du bas règle durée, boucle, rotation et pauses." },
-    { sel: '#timeline', title: 'La timeline', text: "Une piste par propriété : position, rotation, taille, chiffonnage, visibilité. Le <b>point rouge</b> enregistre tes gestes en images clés ; les <b>étincelles</b> posent des effets tout faits ; les flèches sautent d'une clé à l'autre. <b>Tire le haut du panneau</b> pour l'agrandir." },
-    { sel: '#btn-video', title: 'Exporter et enregistrer', text: "La pellicule exporte la <b>vidéo</b> (MP4), les autres boutons l'image ou les calques. <b>Ctrl+S</b> enregistre (Ctrl+Maj+S : enregistrer sous) ; un brouillon est aussi gardé automatiquement et proposé au prochain lancement. Bonne création !" },
-  ];
-  const tourEl = $('tour'), hole = $('tour-hole'), card = $('tour-card');
-  let i = 0;
-  const place = () => {
-    const s = STEPS[i], el = s.sel ? (document.querySelector(s.sel) as HTMLElement | null) : null;
-    const W = innerWidth, H = innerHeight, cw = card.offsetWidth, ch = card.offsetHeight;
-    if (el) {
-      const r = el.getBoundingClientRect(), pad = 6;
-      hole.style.cssText = `left:${r.left - pad}px;top:${r.top - pad}px;width:${r.width + pad * 2}px;height:${r.height + pad * 2}px`;
-      let x = r.right + 18, y = r.top + r.height / 2 - ch / 2;                         // à droite de l'élément
-      if (x + cw > W - 12) { x = r.left + r.width / 2 - cw / 2; y = r.bottom + 18; }   // sinon dessous
-      if (y + ch > H - 12) y = r.top - ch - 18;                                        // sinon dessus
-      if (y < 12) y = Math.max(12, Math.min(H - ch - 12, r.top + 12));
-      card.style.left = Math.max(12, Math.min(x, W - cw - 12)) + 'px'; card.style.top = Math.max(12, Math.min(y, H - ch - 12)) + 'px';
-    } else {
-      hole.style.cssText = `left:${W / 2}px;top:${H / 2}px;width:0;height:0`;
-      card.style.left = (W - cw) / 2 + 'px'; card.style.top = (H - ch) / 2 + 'px';
-    }
-  };
-  const render = () => {
-    const s = STEPS[i];
-    $('tour-step').textContent = `Étape ${i + 1} sur ${STEPS.length}`; $('tour-title').textContent = s.title; $('tour-text').innerHTML = s.text;
-    $('tour-next').textContent = i === STEPS.length - 1 ? 'Terminer' : 'Suivant';
-    ($('tour-prev') as HTMLButtonElement).style.visibility = i ? 'visible' : 'hidden';
-    place();
-  };
-  const close = () => {
-    tourEl.classList.remove('open');
-    try { if ($<HTMLInputElement>('tour-never').checked) localStorage.setItem('maxernzt.tour', '1'); else localStorage.removeItem('maxernzt.tour'); } catch { /* ignoré */ }
-  };
-  const open = () => {
-    i = 0; let never = false; try { never = localStorage.getItem('maxernzt.tour') === '1'; } catch { /* ignoré */ }
-    $<HTMLInputElement>('tour-never').checked = never; tourEl.classList.add('open'); render();
-  };
-  $('tour-next').onclick = () => { if (i < STEPS.length - 1) { i++; render(); } else close(); };
-  $('tour-prev').onclick = () => { if (i) { i--; render(); } };
-  $('tour-close').onclick = close;
-  addEventListener('maxernzt-tour', open);
-  addEventListener('resize', () => tourEl.classList.contains('open') && place());
-  addEventListener('keydown', e => {
-    if (!tourEl.classList.contains('open')) return;
-    if (e.key === 'Escape') { e.stopPropagation(); close(); } else if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); $('tour-next').click(); } else if (e.key === 'ArrowLeft') { e.preventDefault(); $('tour-prev').click(); }
-  }, true);
-  // premier lancement (ou tant que « ne plus afficher » n'est pas coché), sans gêner la restauration d'un brouillon
-  let seen = false; try { seen = localStorage.getItem('maxernzt.tour') === '1'; } catch { /* ignoré */ }
-  if (!seen && !new URLSearchParams(location.search).has('open')) setTimeout(async () => { const a = await kvGet('autosave').catch(() => undefined); if (!a) open(); }, 600);
-}
+initTooltips();
+initHelp();
+initTour();
 (window as any).__app = { projectJson, autoSave, app, loadProject, saveProject, addLayer, layers, replaceBase, cutoutFlat, get selected() { return selected; } };
 commit();
 status('Glisse des images ici, ou colle-les (Ctrl+V).');

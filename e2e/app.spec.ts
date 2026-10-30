@@ -240,4 +240,38 @@ test.describe('MaXernZt : invariants fonctionnels', () => {
     expect(left.frames, 'textures de plis restées vivantes après la suppression').toBe(0);
     expect(errors).toEqual([]);
   });
+  test('interface : aide (F1, recherche), visite guidée, infobulle', async ({ page }) => {
+    const errors = await openApp(page);
+    await page.keyboard.press('F1');
+    await expect(page.locator('#help')).toHaveClass(/open/);
+    const all = await page.locator('#help-nav .hn').count();
+    expect(all).toBeGreaterThan(5);
+    await page.fill('#help-q', 'timeline');
+    const found = await page.locator('#help-nav .hn').count();
+    expect(found).toBeGreaterThan(0); expect(found).toBeLessThan(all);
+    await expect(page.locator('#help-body mark, #help-body span').first()).toBeVisible();
+    await page.fill('#help-q', 'zzzzintrouvable');
+    await expect(page.locator('#help-nav .none')).toBeVisible();
+
+    await page.fill('#help-q', ''); await page.click('#help-tour');            // l'aide se ferme, la visite s'ouvre
+    await expect(page.locator('#help')).not.toHaveClass(/open/);
+    await expect(page.locator('#tour')).toHaveClass(/open/);
+    await expect(page.locator('#tour-step')).toContainText('Étape 1 sur');
+    await page.click('#tour-next'); await expect(page.locator('#tour-step')).toContainText('Étape 2 sur');
+    await page.keyboard.press('ArrowLeft'); await expect(page.locator('#tour-step')).toContainText('Étape 1 sur');
+    await page.keyboard.press('Escape'); await expect(page.locator('#tour')).not.toHaveClass(/open/);
+
+    await page.locator('#btn-import').hover();
+    await expect(page.locator('#tip')).toHaveClass(/on/);
+    expect((await page.locator('#tip').textContent())?.length).toBeGreaterThan(2);
+    expect(errors).toEqual([]);
+  });
+  test('visite guidée : elle s’ouvre seule au premier lancement, pas si « ne plus afficher » est coché', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('#tour')).toHaveClass(/open/, { timeout: 5000 });
+    await page.check('#tour-never'); await page.click('#tour-close');
+    await page.reload(); await page.waitForFunction(() => !!(window as any).__app);
+    await page.waitForTimeout(1500);
+    await expect(page.locator('#tour')).not.toHaveClass(/open/);
+  });
 });
