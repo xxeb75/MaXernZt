@@ -8,6 +8,7 @@ Atelier de collage : chaque morceau de papier est un calque indépendant (dépla
 npm install
 npm run dev      # http://localhost:5173
 npm test         # tests unitaires (Vitest) : groupes, animation, format .maxernzt, audio, zip
+npm run test:e2e # scénarios dans un vrai Chrome (Playwright) : projet, calques, groupes, animation, audio, export
 ```
 
 Le format des fichiers projet est décrit dans `docs/FORMAT.md` ; les fichiers de `tests/fixtures/` sont figés et doivent toujours se charger.

@@ -215,4 +215,29 @@ test.describe('MaXernZt : invariants fonctionnels', () => {
     await expect(page.locator('#render-ov')).not.toHaveClass(/on/);
     expect(errors).toEqual([]);
   });
+  test('ressources Pixi : supprimer un calque chiffonné détruit toutes ses textures', async ({ page }) => {
+    const errors = await openApp(page);
+    await addSquare(page, 'k', '#d33', 500, 500, 200);
+    // chiffonnage de 0 à 1 en une seconde, via une timeline enregistrée puis rouverte
+    const p = await project(page);
+    p.layers[0].tl = { crumple: [{ t: 0, v: 0, e: 'smooth' }, { t: 1, v: 1, e: 'smooth' }] };
+    await openViaInput(page, 'c.maxernzt', JSON.stringify(p));
+    await page.click('#btn-play');
+    await page.waitForTimeout(1800);                                   // la feuille est en boule : les textures de plis existent
+    const created = await page.evaluate(() => {
+      const l = (window as any).__app.layers[0]; (window as any).__ball = l.ball;
+      return { frames: l.ball?.frames.length ?? 0, spr: !!l.ball?.spr, sprite: !!l.sprite.texture, base: l.sprite.texture.label };
+    });
+    expect(created.frames).toBeGreaterThan(5);
+    await page.click('#btn-stop');
+    await row(page, 'k').click();
+    await page.click('#btn-del');
+    expect(await page.evaluate(() => (window as any).__app.layers.length)).toBe(0);
+    const left = await page.evaluate(() => {
+      const b = (window as any).__ball;
+      return { frames: b.frames.filter((t: any) => !t.destroyed).length, spr: !b.spr.texture?.destroyed && !b.spr.destroyed ? 1 : 0 };
+    });
+    expect(left.frames, 'textures de plis restées vivantes après la suppression').toBe(0);
+    expect(errors).toEqual([]);
+  });
 });

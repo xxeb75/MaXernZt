@@ -131,6 +131,11 @@ const isLocked = (n: Node): boolean => { for (let c: Node | null = n; c; c = c.p
 
 const texOf = (c: HTMLCanvasElement) => Texture.from(c);
 
+/** Détruit la boule de chiffonnage d'un calque, y compris toutes les textures de plis (seule celle affichée serait libérée par la destruction du conteneur). */
+function destroyBall(l: Layer) {
+  if (!l.ball) return;
+  l.ball.frames.forEach(t => t.destroy(true)); l.ball.fold.destroy(); l.ball.spr.destroy({ texture: true }); l.ball.sh.destroy(); l.ball = undefined;
+}
 function refresh(l: Layer) {
   const old = l.sprite.texture;
   l.fxBase = fxNeutral(l.fx) ? undefined : applyLayerFx(l.base, l.fx!);
@@ -141,7 +146,7 @@ function refresh(l: Layer) {
   const cx = l.baked.width / 2, cy = l.baked.height / 2;
   l.box.pivot.set(cx, cy);
   l.sprite.pivot.set(cx, cy); l.sprite.position.set(cx, cy); l.shade.pivot.set(cx, cy);
-  if (l.ball) { l.ball.frames.forEach(t => t.destroy(true)); l.ball.fold.destroy(); l.ball.spr.destroy({ texture: true }); l.ball.sh.destroy(); l.ball = undefined; }
+  destroyBall(l);
   const a = l.shadow / 100;
   l.shade.alpha = 0.55 * a; l.shade.position.set(cx + 6 * a + 2, cy + 9 * a + 2);
   (l.shade.filters as BlurFilter[])[0].strength = 2 + 6 * a;
@@ -178,6 +183,7 @@ const placeAbove = (n: Layer, ref: Layer) => { detach(n); attach(n, ref.parent, 
 function removeLayer(l: Layer) {
   const p = l.parent; detach(l); prune(p); selection.delete(l);
   const i = layers.indexOf(l); if (i >= 0) layers.splice(i, 1);
+  destroyBall(l);
   l.box.destroy({ children: true, texture: true });
   if (selected === l) { const rest = [...selection]; if (rest.length) setSelection(rest); else select(layers[layers.length - 1] ?? null); }
 }
