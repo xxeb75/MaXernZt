@@ -1,6 +1,8 @@
 # Publication du site (vitrine + appli en ligne) sur GitHub Pages.
 # Déclenchement : automatique à chaque push sur main, ou à la main (Actions > « Publier le site » > Run workflow).
 # Prérequis (une seule fois) : Settings > Pages > Source = « GitHub Actions ».
+# Chaîne : npm ci -> tests unitaires -> modèles d'IA vérifiés -> compilation (tsc + vite) -> déploiement.
+# Les actions sont épinglées par empreinte de commit (le tag est noté en commentaire).
 name: Publier le site
 
 on:
@@ -21,21 +23,19 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Les modèles d'IA (≈ 49 Mo) ne sont pas dans git : on les télécharge à la construction (licences Apache-2.0).
-      - name: Télécharger les modèles d'IA
-        run: |
-          mkdir -p public/models
-          curl -fL -o public/models/u2netp.onnx https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx
-          curl -fL -o public/models/mobile_sam_image_encoder.onnx https://huggingface.co/Acly/MobileSAM/resolve/main/mobile_sam_image_encoder.onnx
-          curl -fL -o public/models/sam_mask_decoder_single.onnx https://huggingface.co/Acly/MobileSAM/resolve/main/sam_mask_decoder_single.onnx
+      - name: Tests unitaires
+        run: npm test
+      # Les modèles d'IA (≈ 49 Mo) ne sont pas dans git : téléchargés à la construction (licences Apache-2.0), URLs et SHA-256 épinglés.
+      - name: Télécharger et vérifier les modèles d'IA
+        run: node scripts/fetch-models.mjs
       - run: npm run build:web
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa   # v3
         with:
           path: dist-web
 
@@ -47,4 +47,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e   # v4
