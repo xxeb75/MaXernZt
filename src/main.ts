@@ -1,3 +1,4 @@
+import 'pixi.js/unsafe-eval';   // génération de code de Pixi sans eval : permet une CSP sans 'unsafe-eval'
 import { Application, Container, Sprite, Texture, Graphics, BlurFilter, Rectangle } from 'pixi.js';
 import { PAD, makeCanvas, bake, trim, jitter } from './sticker';
 import { cutoutAI, cutoutFlat, modelAvailable } from './cutout';

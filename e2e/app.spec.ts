@@ -274,4 +274,13 @@ test.describe('MaXernZt : invariants fonctionnels', () => {
     await page.waitForTimeout(1500);
     await expect(page.locator('#tour')).not.toHaveClass(/open/);
   });
+  test('détourage IA : le modèle local s’exécute (onnxruntime / wasm)', async ({ page }) => {
+    const errors = await openApp(page);
+    const model = await page.request.get('/models/u2netp.onnx');
+    test.skip(!model.ok() || (await model.body()).length < 1e6, 'modèle u2netp.onnx absent (public/models)');
+    await addSquare(page, 'img', '#c33', 540, 600, 300);
+    await page.click('#btn-ai');
+    await expect(page.locator('#status')).toContainText('Détourage IA terminé', { timeout: 60_000 });
+    expect(errors).toEqual([]);
+  });
 });

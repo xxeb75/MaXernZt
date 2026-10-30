@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "build:web": "tsc && vite build --outDir dist-web/app --emptyOutDir && node scripts/build-site.mjs",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:csp": "node e2e/run-csp.mjs"
   },
   "dependencies": {
     "mp4-muxer": "^5.2.2",
