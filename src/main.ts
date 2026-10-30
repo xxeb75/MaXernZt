@@ -13,6 +13,7 @@ import { type PaperKind, PAPERS, renderPaperOverlay } from './paper';
 import { SHAPES, makeShape, bankList, bankAdd, bankRemove, bankCanvas, kvGet, kvPut, kvDel, type BankItem } from './bank';
 import { type LayerFx, FX0, FX_PRESETS, fxNeutral, applyLayerFx } from './filters';
 import { type Group, type Leaf, type Node, type TNode, isGroup, leavesOf, detach, attach, prune, topNode, lca, childOf, contains, serialize, buildTree } from './groups';
+import { parseProject, stringifyProject, FORMAT_VERSION, type WrittenLayer } from './projectFile';
 import { type Pt, type Key, type Anim, type KEase, type KF, type TL, type PropId, PROPS, defEase, smooth, cum, pathAt, keysOf, totalOf, ballAfter, keyStarts, evalAnim, evalKF, evalTL, putKeyIn, removeKeyIn, keyTimesOf } from './anim';
 
 let PW = 1080, PH = 1920; // taille de la feuille : 9/16 par défaut (voir les formats dans la barre d'options)
@@ -1071,14 +1072,14 @@ const dataUrls = new WeakMap<HTMLCanvasElement, string>();   // les images de ba
 const urlOf = (c: HTMLCanvasElement) => { let u = dataUrls.get(c); if (!u) dataUrls.set(c, u = c.toDataURL('image/png')); return u; };
 function projectJson(): string {
   const ids = new Map<HTMLCanvasElement, string>(), images: Record<string, string> = {};
-  const out = layers.map(l => {
+  const out = layers.map((l): WrittenLayer => {
     let id = ids.get(l.base);
     if (!id) { id = 'img' + ids.size; ids.set(l.base, id); images[id] = urlOf(l.base); }
     const r = restPose.get(l);   // en lecture ou en pause sur la timeline, on enregistre la pose de repos, pas la pose animée
     return { id: l.id, name: l.name, visible: l.visible, locked: l.locked || undefined, fx: l.fx, anim: l.anim, tl: l.tl, acc: l.acc, image: id, border: l.border, shadow: l.shadow, rough: l.rough, letter: l.letter, x: r?.x ?? l.box.x, y: r?.y ?? l.box.y, rotation: r?.r ?? l.box.rotation, scaleX: r?.sx ?? l.box.scale.x, scaleY: r?.sy ?? l.box.scale.y };
   });
   const au = audioTrack ? (audioTrack.b64 ??= bytesToB64(audioTrack.bytes), { name: audioTrack.name, mime: audioTrack.mime, data: audioTrack.b64, vol: audioTrack.vol, muted: audioTrack.muted, sens: audioTrack.sens, src: audioTrack.src }) : undefined;
-  return JSON.stringify({ format: 'maxernzt', version: 2, paper: [PW, PH], bg: bgColor, paperTex: paperKind, paperAmt, tree: serialize(root), duration: tlDurManual, layers: out, images, audio: au });
+  return stringifyProject({ paper: [PW, PH], bg: bgColor, paperTex: paperKind, paperAmt, tree: serialize(root), duration: tlDurManual, layers: out, images, audio: au });
 }
 async function saveProject(asNew = false) {
   stopPlay();
@@ -1130,15 +1131,13 @@ const decode = (url: string) => new Promise<HTMLCanvasElement>((res, rej) => {
 async function loadProject(f: File, path?: string) {
   stopPlay();
   try {
-    const txt = await f.text();
-    if (!txt.trim()) throw new Error('le fichier est vide (enregistrement interrompu)');
-    const d = JSON.parse(txt);
-    if (d.format !== 'maxernzt' || !Array.isArray(d.layers)) throw new Error('fichier non reconnu');
+    const d = parseProject(await f.text());   // valide tout avant de toucher à la feuille : un fichier invalide ne la modifie pas
+    if (d.newer) toast('Projet plus récent', `Ce fichier est au format ${d.version} ; cette version lit le format ${FORMAT_VERSION}. Certains éléments peuvent manquer.`, 'warn');
     const imgs = new Map<string, HTMLCanvasElement>();
-    for (const [id, url] of Object.entries<string>(d.images)) imgs.set(id, await decode(url));
-    const ls: LState[] = d.layers.map((l: any) => ({ id: l.id, name: l.name, visible: l.visible !== false, locked: !!l.locked, fx: l.fx, anim: l.anim, tl: l.tl, acc: l.acc, base: imgs.get(l.image)!, border: l.border, shadow: l.shadow, rough: l.rough ?? 60, letter: l.letter, x: l.x, y: l.y, rot: l.rotation, sx: l.scaleX, sy: l.scaleY }));
+    for (const [id, url] of Object.entries(d.images)) imgs.set(id, await decode(url));
+    const ls: LState[] = d.layers.map(({ image, ...l }) => ({ ...l, base: imgs.get(image)! }));
     nextId = Math.max(nextId, ...ls.map(l => l.id + 1));
-    restore({ dur: typeof d.duration === 'number' ? d.duration : null, paper: Array.isArray(d.paper) && d.paper.length === 2 ? [d.paper[0], d.paper[1]] : undefined, layers: ls, bg: d.bg ?? bgColor, pk: d.paperTex ?? 'none', pa: typeof d.paperAmt === 'number' ? d.paperAmt : 70, tree: Array.isArray(d.tree) ? d.tree : ls.map(l => ({ l: l.id })), sel: [] });
+    restore({ dur: d.duration, paper: d.paper, layers: ls, bg: d.bg ?? bgColor, pk: d.paperTex as PaperKind, pa: d.paperAmt, tree: d.tree, sel: [] });
     if (d.audio?.data) { try { await setAudio(b64ToBytes(d.audio.data), d.audio.name, d.audio.mime, { vol: d.audio.vol, muted: d.audio.muted, sens: d.audio.sens, src: d.audio.src, keepDuration: true }); } catch (err) { toast('Musique du projet illisible', String(err), 'warn'); clearAudio(); } } else clearAudio();
     projectName = f.name.replace(/\.(maxernzt|json)$/i, ''); projectPath = path ?? null; projectHandle = null; commit(); dirty = false;
     if (layers.some(l => l.tl)) playheadTo(0);   // projet animé à la timeline : on l'ouvre sur la pose de l'instant 0 (sinon tous les éléments apparaissent à la fois)
