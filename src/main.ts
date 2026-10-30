@@ -13,14 +13,10 @@ import { type PaperKind, PAPERS, renderPaperOverlay } from './paper';
 import { SHAPES, makeShape, bankList, bankAdd, bankRemove, bankCanvas, kvGet, kvPut, kvDel, type BankItem } from './bank';
 import { type LayerFx, FX0, FX_PRESETS, fxNeutral, applyLayerFx } from './filters';
 import { type Group, type Leaf, type Node, type TNode, isGroup, leavesOf, detach, attach, prune, topNode, lca, childOf, contains, serialize, buildTree } from './groups';
+import { type Pt, type Key, type Anim, type KEase, type KF, type TL, type PropId, PROPS, defEase, smooth, cum, pathAt, keysOf, totalOf, ballAfter, keyStarts, evalAnim, evalKF, evalTL, putKeyIn, removeKeyIn, keyTimesOf } from './anim';
 
 let PW = 1080, PH = 1920; // taille de la feuille : 9/16 par défaut (voir les formats dans la barre d'options)
-type Pt = { x: number; y: number };
 
-/** Trajectoire d'un élément ou d'un groupe : points relatifs au centre, durée en secondes. */
-/** Image clé : l'élément s'arrête au point `u` (0-1) du trajet pendant `hold` s, tourne de `spin` degrés et, en option, se chiffonne en boule. */
-interface Key { u: number; hold: number; spin: number; ball?: boolean }  // ball : true = se chiffonne, false = se déchiffonne, absent = garde l'état précédent
-interface Anim { pts: Pt[]; dur: number; mode: 'loop' | 'pingpong'; ease: 'linear' | 'smooth'; follow: boolean; keys?: Key[]; turns?: number }   // turns : tours complets sur soi-même par cycle (négatif = sens inverse)
 interface BallFx { spr: Sprite; sh: Sprite; fold: Sprite; frames: Texture[]; k: number; sz: number }
 /** Accessoire généré (scotch, peinture, punaise…) : type et réglages, pour pouvoir le modifier par double-clic. */
 interface AccSpec { kind: string; p: AccParams }
@@ -1543,52 +1539,6 @@ const animOf = (n: Node): Anim | undefined => (isGroup(n) ? (n.anim as Anim | un
 function setAnim(n: Node, a: Anim | undefined) { if (isGroup(n)) n.anim = a; else (n as Layer).anim = a; }
 const animJson = (a?: Anim) => (a ? { points: a.pts.map(p => [Math.round(p.x), Math.round(p.y)]), duration: a.dur, mode: a.mode, ease: a.ease, follow: a.follow, turns: a.turns ?? 0, keys: keysOf(a).map(k => ({ progress: +k.u.toFixed(4), hold: k.hold, spin: k.spin, crumple: ballAfter(a, keysOf(a).indexOf(k)) })) } : null);
 
-const lenCache = new WeakMap<Anim, number[]>();
-function cum(a: Anim): number[] {
-  let c = lenCache.get(a);
-  if (!c) { c = [0]; for (let i = 1; i < a.pts.length; i++) c.push(c[i - 1] + Math.hypot(a.pts[i].x - a.pts[i - 1].x, a.pts[i].y - a.pts[i - 1].y)); lenCache.set(a, c); }
-  return c;
-}
-/** Position (relative) et cap au point d'abscisse curviligne `u` (0-1). */
-function pathAt(a: Anim, u: number) {
-  const c = cum(a), d = Math.min(Math.max(u, 0), 1) * (c[c.length - 1] || 1);
-  let i = 1; while (i < c.length - 1 && c[i] < d) i++;
-  const t = (d - c[i - 1]) / ((c[i] - c[i - 1]) || 1), p0 = a.pts[i - 1], p1 = a.pts[i];
-  return { x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t, ang: Math.atan2(p1.y - p0.y, p1.x - p0.x) };
-}
-const smooth = (t: number) => t * t * (3 - 2 * t);
-const keysOf = (a: Anim): Key[] => a.keys ?? [];
-const totalOf = (a: Anim) => a.dur + keysOf(a).reduce((t, k) => t + k.hold, 0);
-/** Début de chaque pause sur la ligne de temps (s). */
-/** La feuille est-elle chiffonnée après l'image clé `i` ? */
-function ballAfter(a: Anim, i: number): boolean { let st = false; keysOf(a).slice(0, i + 1).forEach(k => { if (k.ball !== undefined) st = k.ball; }); return st; }
-function keyStarts(a: Anim): number[] {
-  let t = 0, cu = 0;
-  return keysOf(a).map(k => { t += (k.u - cu) * a.dur; cu = k.u; const st = t; t += k.hold; return st; });
-}
-/** État à l'instant `time` : avancement `u` sur le trajet, rotation ajoutée (degrés) et taux de chiffonnage (0-1). */
-function evalAnim(a: Anim, time: number) {
-  const ks = keysOf(a), tot = totalOf(a);
-  let T = time % (a.mode === 'loop' ? tot : tot * 2), fwd = true;
-  if (a.mode === 'pingpong' && T > tot) { T = 2 * tot - T; fwd = false; }
-  let t = 0, cu = 0, spin = 0, b0 = 0, u = 1, rot = 0, ball = 0, found = false;
-  const seg = (to: number) => {
-    const d = (to - cu) * a.dur;
-    if (!found && T < t + d) { const q = d > 0 ? (T - t) / d : 1; u = cu + (a.ease === 'smooth' ? smooth(q) : q) * (to - cu); rot = spin; ball = b0; found = true; }
-    t += d; cu = to;
-  };
-  for (const k of ks) {
-    seg(k.u);
-    const tgt = k.ball === undefined ? b0 : k.ball ? 1 : 0;
-    if (!found && T < t + k.hold) { const q = k.hold > 0 ? smooth((T - t) / k.hold) : 1; u = k.u; rot = spin + q * k.spin; ball = b0 + q * (tgt - b0); found = true; }
-    t += k.hold; spin += k.spin; b0 = tgt;
-  }
-  seg(1);
-  if (!found) { u = 1; rot = spin; ball = b0; }
-  const p = pathAt(a, u);
-  return { x: p.x, y: p.y, u, ang: fwd ? p.ang : p.ang + Math.PI, rot: rot + (a.turns ?? 0) * 360 * (T / tot), ball };   // rotation continue répartie sur tout le cycle
-}
-
 // ---- chiffonnage : le papier se réduit et se fond dans une boule faite de ses propres couleurs, à la taille proportionnelle de l'élément
 const prng = (seed: number) => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
 function opaqueArea(c: HTMLCanvasElement): number {
@@ -1773,56 +1723,13 @@ function setCrumple(l: Layer, b: number) {
 
 // ---- timeline : images clés par propriété (position, rotation, taille, chiffonnage, visibilité).
 // Les valeurs sont relatives à la pose de repos ; avant la première image clé on garde sa valeur, après la dernière aussi.
-type KEase = 'linear' | 'smooth' | 'hold';
-interface KF { t: number; v: number; w?: number; e?: KEase }   // w : seconde valeur (y de la position) ; e : interpolation vers l'image clé suivante
-interface TL { pos?: KF[]; rot?: KF[]; scale?: KF[]; crumple?: KF[]; vis?: KF[] }
-type PropId = 'pos' | 'rot' | 'scale' | 'crumple' | 'vis';
-const PROPS: { id: PropId; name: string; icon: string; dv: number; dw: number }[] = [
-  { id: 'pos', name: 'Position', icon: 'move', dv: 0, dw: 0 }, { id: 'rot', name: 'Rotation', icon: 'spin', dv: 0, dw: 0 },
-  { id: 'scale', name: 'Taille', icon: 'fit', dv: 1, dw: 0 }, { id: 'crumple', name: 'Chiffonnage', icon: 'ball', dv: 0, dw: 0 },
-  { id: 'vis', name: 'Visibilité', icon: 'eye', dv: 1, dw: 0 },
-];
-const defEase = (p: PropId): KEase => (p === 'vis' ? 'hold' : 'smooth');
 const tlOf = (n: Node): TL | undefined => (isGroup(n) ? (n.tl as TL | undefined) : (n as Layer).tl);
 function setTl(n: Node, tl: TL | undefined) { if (isGroup(n)) n.tl = tl; else (n as Layer).tl = tl; }
 
-function evalKF(k: KF[] | undefined, t: number, dv: number, dw = 0): { v: number; w: number } {
-  if (!k?.length) return { v: dv, w: dw };
-  const n = k.length;
-  if (t <= k[0].t) return { v: k[0].v, w: k[0].w ?? dw };
-  if (t >= k[n - 1].t) return { v: k[n - 1].v, w: k[n - 1].w ?? dw };
-  let i = 0; while (i < n - 2 && k[i + 1].t <= t) i++;
-  const a = k[i], b = k[i + 1], e = a.e ?? 'smooth';
-  let f = (t - a.t) / ((b.t - a.t) || 1);
-  if (e === 'hold') f = 0; else if (e === 'smooth') f = smooth(f);
-  const aw = a.w ?? dw, bw = b.w ?? dw;
-  return { v: a.v + (b.v - a.v) * f, w: aw + (bw - aw) * f };
-}
-function evalTL(tl: TL | undefined, t: number) {
-  const p = evalKF(tl?.pos, t, 0, 0);
-  return { x: p.v, y: p.w, rot: evalKF(tl?.rot, t, 0).v, scale: evalKF(tl?.scale, t, 1).v, crumple: evalKF(tl?.crumple, t, 0).v, vis: evalKF(tl?.vis, t, 1).v };
-}
-/** Pose (ou met à jour) l'image clé de `prop` à l'instant t. La première image clé posée après 0 s ajoute un départ à la valeur de repos. */
-function putKey(n: Node, prop: PropId, t: number, v: number, w?: number, e?: KEase) {
-  const tl: TL = { ...(tlOf(n) ?? {}) }, list = [...(tl[prop] ?? [])];
-  const i = list.findIndex(k => Math.abs(k.t - t) < 0.02);
-  if (i >= 0) list[i] = { ...list[i], v, ...(w !== undefined ? { w } : {}) };
-  else {
-    if (!list.length && t > 0.05) { const d = PROPS.find(q => q.id === prop)!; list.push({ t: 0, v: d.dv, ...(prop === 'pos' ? { w: 0 } : {}), e: defEase(prop) }); }
-    list.push({ t, v, ...(w !== undefined ? { w } : {}), e: e ?? defEase(prop) });
-  }
-  list.sort((a, b) => a.t - b.t); tl[prop] = list; setTl(n, tl);
-}
-function removeKey(n: Node, prop: PropId, t: number) {
-  const tl: TL = { ...(tlOf(n) ?? {}) }, list = (tl[prop] ?? []).filter(k => Math.abs(k.t - t) > 1e-6);
-  if (list.length) tl[prop] = list; else delete tl[prop];
-  setTl(n, Object.keys(tl).length ? tl : undefined);
-}
-function nodeKeyTimes(n: Node): number[] {
-  const tl = tlOf(n), out = new Set<number>();
-  if (tl) for (const p of PROPS) for (const k of tl[p.id] ?? []) out.add(k.t);
-  return [...out].sort((a, b) => a - b);
-}
+/** Pose (ou met à jour) l'image clé de `prop` à l'instant t (voir `putKeyIn`). */
+function putKey(n: Node, prop: PropId, t: number, v: number, w?: number, e?: KEase) { setTl(n, putKeyIn(tlOf(n), prop, t, v, w, e)); }
+function removeKey(n: Node, prop: PropId, t: number) { setTl(n, removeKeyIn(tlOf(n), prop, t)); }
+const nodeKeyTimes = (n: Node): number[] => keyTimesOf(tlOf(n));
 let tlDurManual: number | null = null;
 function lastKeyTime(): number {
   let m = 0;
